@@ -2,16 +2,18 @@ import { memo, useEffect, useRef, useState, type ChangeEvent } from "react";
 import { Composer } from "../components/ui/Composer";
 import { MessageList } from "../components/ui/MessageList";
 import {
-  askQuestion,
   clearContext,
-  getUploadStatus,
+  createChatSocket,
+  createUploadStatusSocket,
   uploadFiles,
 } from "../requests/chat";
 import type {
+  ChatStreamEvent,
   ChatMessage,
   JobStatus,
   UploadedAsset,
   UploadStatusResponse,
+  UploadStatusStreamEvent,
 } from "../types/chat";
 import { acceptedFileTypes, inferAttachmentKind } from "../utils/files";
 
@@ -60,10 +62,12 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [feedback, setFeedback] = useState("");
-  const [jobId, setJobId] = useState<string | null>(null);
   const [jobStatus, setJobStatus] = useState<JobStatus | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const conversationRef = useRef<HTMLDivElement | null>(null);
+  const chatSocketRef = useRef<WebSocket | null>(null);
+  const uploadSocketRef = useRef<WebSocket | null>(null);
+  const activeAssistantMessageIdRef = useRef<string | null>(null);
 
   const isChatReady = jobStatus === "completed";
   const isProcessing = jobStatus === "queued" || jobStatus === "processing";
@@ -76,89 +80,27 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
   }, [messages]);
 
   useEffect(() => {
-    if (!jobId || !isProcessing) {
-      return;
-    }
-
-    const activeJobId = jobId;
-    let cancelled = false;
-
-    async function pollStatus() {
-      try {
-        const nextStatus = await getUploadStatus(activeJobId);
-        if (cancelled) {
-          return;
-        }
-
-        setJobStatus(nextStatus.status);
-        setFeedback(buildStatusText(nextStatus, "Processing upload..."));
-
-        if (nextStatus.status === "completed") {
-          setUploads((current) =>
-            current.map((upload) => ({ ...upload, status: "ready" })),
-          );
-          setMessages((current) => {
-            if (current.length > 0) {
-              return current;
-            }
-            return [
-              createMessage(
-                "assistant",
-                nextStatus.summary ||
-                  "Upload completed. Ask anything about your files.",
-              ),
-            ];
-          });
-          return;
-        }
-
-        if (nextStatus.status === "failed") {
-          setUploads((current) =>
-            current.map((upload) => ({ ...upload, status: "failed" })),
-          );
-          setMessages((current) => [
-            ...current,
-            createMessage(
-              "assistant",
-              `Upload failed: ${nextStatus.error || "Unknown error."}`,
-            ),
-          ]);
-          return;
-        }
-
-        window.setTimeout(() => {
-          void pollStatus();
-        }, 1500);
-      } catch (error) {
-        if (cancelled) {
-          return;
-        }
-        const message =
-          error instanceof Error ? error.message : "Failed to fetch upload status.";
-        setFeedback(message);
-        setJobStatus("failed");
-        setUploads((current) =>
-          current.map((upload) => ({ ...upload, status: "failed" })),
-        );
-      }
-    }
-
-    void pollStatus();
-
     return () => {
-      cancelled = true;
+      chatSocketRef.current?.close();
+      uploadSocketRef.current?.close();
+      chatSocketRef.current = null;
+      uploadSocketRef.current = null;
     };
-  }, [jobId, isProcessing]);
+  }, []);
 
   function openFilePicker() {
     fileInputRef.current?.click();
   }
 
   function resetLocalState() {
+    chatSocketRef.current?.close();
+    uploadSocketRef.current?.close();
+    chatSocketRef.current = null;
+    uploadSocketRef.current = null;
+    activeAssistantMessageIdRef.current = null;
     setUploads([]);
     setMessages([]);
     setDraft("");
-    setJobId(null);
     setJobStatus(null);
   }
 
@@ -229,12 +171,12 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
 
     try {
       const response = await uploadFiles(uploads.map((upload) => upload.file));
-      setJobId(response.job_id);
       setJobStatus(response.status);
       setUploads((current) =>
         current.map((upload) => ({ ...upload, status: "processing" })),
       );
-      setFeedback("Upload accepted. Background processing started.");
+      setFeedback("Upload accepted. Live processing updates connected.");
+      connectUploadStatusSocket(response.job_id);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Upload failed. Please try again.";
@@ -259,11 +201,7 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
     setMessages((current) => [...current, createMessage("user", question)]);
 
     try {
-      const response = await askQuestion({ question });
-      setMessages((current) => [
-        ...current,
-        createMessage("assistant", response.answer),
-      ]);
+      await sendQuestionOverSocket(question);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Chat request failed. Please try again.";
@@ -274,6 +212,189 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
     } finally {
       setIsSending(false);
     }
+  }
+
+  function ensureSocket(): Promise<WebSocket> {
+    const existing = chatSocketRef.current;
+    if (existing && existing.readyState === WebSocket.OPEN) {
+      return Promise.resolve(existing);
+    }
+
+    if (existing && existing.readyState === WebSocket.CONNECTING) {
+      return new Promise((resolve, reject) => {
+        const handleOpen = () => {
+          existing.removeEventListener("open", handleOpen);
+          existing.removeEventListener("error", handleError);
+          resolve(existing);
+        };
+        const handleError = () => {
+          existing.removeEventListener("open", handleOpen);
+          existing.removeEventListener("error", handleError);
+          reject(new Error("WebSocket connection failed."));
+        };
+        existing.addEventListener("open", handleOpen);
+        existing.addEventListener("error", handleError, { once: true });
+      });
+    }
+
+    return new Promise((resolve, reject) => {
+      const socket = createChatSocket({
+        onOpen: () => {
+          setFeedback("Live chat connected.");
+          resolve(socket);
+        },
+        onMessage: handleSocketMessage,
+        onClose: () => {
+          chatSocketRef.current = null;
+        },
+        onError: () => {
+          reject(new Error("WebSocket connection failed."));
+        },
+      });
+
+      chatSocketRef.current = socket;
+    });
+  }
+
+  function handleSocketMessage(event: ChatStreamEvent) {
+    if (event.type === "start") {
+      const assistantMessage = createMessage("assistant", "");
+      assistantMessage.state = "streaming";
+      activeAssistantMessageIdRef.current = assistantMessage.id;
+      setMessages((current) => [...current, assistantMessage]);
+      return;
+    }
+
+    if (event.type === "chunk") {
+      const targetId = activeAssistantMessageIdRef.current;
+      if (!targetId) {
+        return;
+      }
+
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === targetId
+            ? {
+                ...message,
+                content: message.content + (event.content || ""),
+                state: "streaming",
+              }
+            : message,
+        ),
+      );
+      return;
+    }
+
+    if (event.type === "done") {
+      const targetId = activeAssistantMessageIdRef.current;
+      activeAssistantMessageIdRef.current = null;
+      setIsSending(false);
+      setFeedback("Response streamed successfully.");
+
+      if (!targetId) {
+        return;
+      }
+
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === targetId
+            ? {
+                ...message,
+                content: event.answer || message.content,
+                state: "complete",
+              }
+            : message,
+        ),
+      );
+      return;
+    }
+
+    if (event.type === "error") {
+      activeAssistantMessageIdRef.current = null;
+      setIsSending(false);
+      const errorMessage = event.message || "Streaming failed.";
+      setFeedback(errorMessage);
+      setMessages((current) => [
+        ...current,
+        createMessage("assistant", `Request failed: ${errorMessage}`),
+      ]);
+    }
+  }
+
+  async function sendQuestionOverSocket(question: string) {
+    const socket = await ensureSocket();
+    socket.send(
+      JSON.stringify({
+        type: "question",
+        question,
+      }),
+    );
+  }
+
+  function connectUploadStatusSocket(nextJobId: string) {
+    uploadSocketRef.current?.close();
+
+    const socket = createUploadStatusSocket(nextJobId, {
+      onOpen: () => {
+        setFeedback("Processing files...");
+      },
+      onMessage: handleUploadSocketMessage,
+      onClose: () => {
+        uploadSocketRef.current = null;
+      },
+      onError: () => {
+        setFeedback("Live upload status connection failed.");
+        setJobStatus("failed");
+        setUploads((current) =>
+          current.map((upload) => ({ ...upload, status: "failed" })),
+        );
+      },
+    });
+
+    uploadSocketRef.current = socket;
+  }
+
+  function handleUploadSocketMessage(event: UploadStatusStreamEvent) {
+    setJobStatus(event.status);
+    setFeedback(buildStatusText(event, "Processing upload..."));
+
+    if (event.status === "completed") {
+      uploadSocketRef.current?.close();
+      setUploads((current) =>
+        current.map((upload) => ({ ...upload, status: "ready" })),
+      );
+      setMessages((current) => {
+        if (current.length > 0) {
+          return current;
+        }
+        return [
+          createMessage(
+            "assistant",
+            event.summary || "Upload completed. Ask anything about your files.",
+          ),
+        ];
+      });
+      return;
+    }
+
+    if (event.status === "failed") {
+      uploadSocketRef.current?.close();
+      setUploads((current) =>
+        current.map((upload) => ({ ...upload, status: "failed" })),
+      );
+      setMessages((current) => [
+        ...current,
+        createMessage(
+          "assistant",
+          `Upload failed: ${event.error || "Unknown error."}`,
+        ),
+      ]);
+      return;
+    }
+
+    setUploads((current) =>
+      current.map((upload) => ({ ...upload, status: "processing" })),
+    );
   }
 
   return (

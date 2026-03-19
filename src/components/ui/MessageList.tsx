@@ -70,7 +70,12 @@ export const MessageList = memo(function MessageList({
             <span>{labelForRole(message.role)}</span>
             <span className="message-time">{formatRelativeLabel(message.createdAt)}</span>
           </div>
-          {message.content.split("\n").map((paragraph, index) => (
+          {(message.state === "streaming" && message.content.length === 0
+            ? "..."
+            : message.content
+          )
+            .split("\n")
+            .map((paragraph, index) => (
             <p key={`${message.id}-${index}`}>{paragraph}</p>
           ))}
         </article>

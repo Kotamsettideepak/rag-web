@@ -33,6 +33,15 @@ export interface AskQuestionResponse {
   answer: string;
 }
 
+export type ChatStreamEventType = "start" | "chunk" | "done" | "error";
+
+export interface ChatStreamEvent {
+  type: ChatStreamEventType;
+  content?: string;
+  answer?: string;
+  message?: string;
+}
+
 export interface UploadJobFile {
   file_id: string;
   file_name: string;
@@ -72,6 +81,10 @@ export interface UploadStatusResponse {
   summary?: string;
   error?: string;
   metrics: JobMetrics;
+}
+
+export interface UploadStatusStreamEvent extends UploadStatusResponse {
+  type: "status";
 }
 
 export interface ClearContextResponse {

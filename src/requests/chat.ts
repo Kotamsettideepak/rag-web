@@ -1,11 +1,13 @@
 import type {
   AskQuestionRequest,
   AskQuestionResponse,
+  ChatStreamEvent,
   ClearContextResponse,
   UploadFilesResponse,
   UploadStatusResponse,
+  UploadStatusStreamEvent,
 } from "../types/chat";
-import { apiBaseUrl, apiRequest } from "./client";
+import { apiBaseUrl, apiRequest, websocketBaseUrl } from "./client";
 
 const USE_MOCKS = !import.meta.env.VITE_ENABLE_BACKEND;
 
@@ -119,6 +121,41 @@ export async function getUploadStatus(jobId: string): Promise<UploadStatusRespon
   return apiRequest<UploadStatusResponse>(`/status/${jobId}`);
 }
 
+export function createUploadStatusSocket(
+  jobId: string,
+  handlers: {
+    onOpen?: () => void;
+    onMessage?: (event: UploadStatusStreamEvent) => void;
+    onClose?: () => void;
+    onError?: () => void;
+  } = {},
+): WebSocket {
+  const socket = new WebSocket(`${websocketBaseUrl}/ws/status/${jobId}`);
+
+  socket.addEventListener("open", () => {
+    handlers.onOpen?.();
+  });
+
+  socket.addEventListener("message", (event) => {
+    try {
+      const parsed = JSON.parse(event.data) as UploadStatusStreamEvent;
+      handlers.onMessage?.(parsed);
+    } catch {
+      handlers.onError?.();
+    }
+  });
+
+  socket.addEventListener("close", () => {
+    handlers.onClose?.();
+  });
+
+  socket.addEventListener("error", () => {
+    handlers.onError?.();
+  });
+
+  return socket;
+}
+
 export async function askQuestion(
   payload: AskQuestionRequest,
 ): Promise<AskQuestionResponse> {
@@ -133,6 +170,43 @@ export async function askQuestion(
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export function createChatSocket(
+  handlers: {
+    onOpen?: () => void;
+    onMessage?: (event: ChatStreamEvent) => void;
+    onClose?: () => void;
+    onError?: () => void;
+  } = {},
+): WebSocket {
+  const socket = new WebSocket(`${websocketBaseUrl}/ws`);
+
+  socket.addEventListener("open", () => {
+    handlers.onOpen?.();
+  });
+
+  socket.addEventListener("message", (event) => {
+    try {
+      const parsed = JSON.parse(event.data) as ChatStreamEvent;
+      handlers.onMessage?.(parsed);
+    } catch {
+      handlers.onMessage?.({
+        type: "error",
+        message: "Received an invalid websocket payload.",
+      });
+    }
+  });
+
+  socket.addEventListener("close", () => {
+    handlers.onClose?.();
+  });
+
+  socket.addEventListener("error", () => {
+    handlers.onError?.();
+  });
+
+  return socket;
 }
 
 export async function clearContext(): Promise<ClearContextResponse> {
