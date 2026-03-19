@@ -1,45 +1,79 @@
-export type AttachmentKind = 'pdf' | 'image' | 'video' | 'audio' | 'unknown'
+export type AttachmentKind = "pdf" | "image" | "video" | "audio" | "unknown";
 
-export type MessageRole = 'user' | 'assistant'
+export type MessageRole = "user" | "assistant";
+
+export type UploadState = "local" | "uploading" | "processing" | "ready" | "failed";
+
+export type JobStatus = "queued" | "processing" | "completed" | "failed";
 
 export interface UploadedAsset {
-  id: string
-  name: string
-  size: number
-  mimeType: string
-  kind: AttachmentKind
-  previewUrl?: string
-  status: 'local' | 'uploading' | 'ready' | 'failed'
+  id: string;
+  file: File;
+  name: string;
+  size: number;
+  mimeType: string;
+  kind: AttachmentKind;
+  status: UploadState;
 }
 
 export interface ChatMessage {
-  id: string
-  role: MessageRole
-  content: string
-  createdAt: string
-  sources?: string[]
-  state?: 'streaming' | 'complete'
-}
-
-export interface ChatSessionSummary {
-  id: string
-  title: string
-  lastUpdated: string
-  summary: string
+  id: string;
+  role: MessageRole;
+  content: string;
+  createdAt: string;
+  sources?: string[];
+  state?: "streaming" | "complete";
 }
 
 export interface AskQuestionRequest {
-  prompt: string
-  activeFileIds: string[]
+  question: string;
 }
 
 export interface AskQuestionResponse {
-  answer: string
-  sources: string[]
+  answer: string;
+}
+
+export interface UploadJobFile {
+  file_id: string;
+  file_name: string;
+  pages: number;
+  status: string;
+  error?: string;
+}
+
+export interface JobMetrics {
+  parse_duration_ms: number;
+  chunk_duration_ms: number;
+  embedding_duration_ms: number;
+  storage_duration_ms: number;
+  total_duration_ms: number;
+  throughput_chunks_sec: number;
 }
 
 export interface UploadFilesResponse {
-  fileId: string
-  filename: string
-  status: 'queued' | 'ready'
+  job_id: string;
+  status: JobStatus;
+  message: string;
+  summary: string;
+  files: UploadJobFile[];
+  metrics: JobMetrics;
+  accepted: boolean;
+}
+
+export interface UploadStatusResponse {
+  job_id: string;
+  status: JobStatus;
+  created_at: string;
+  updated_at: string;
+  started_at?: string;
+  completed_at?: string;
+  file_count: number;
+  files: UploadJobFile[];
+  summary?: string;
+  error?: string;
+  metrics: JobMetrics;
+}
+
+export interface ClearContextResponse {
+  message: string;
 }

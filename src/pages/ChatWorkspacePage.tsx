@@ -1,462 +1,373 @@
+import { memo, useEffect, useRef, useState, type ChangeEvent } from "react";
+import { Composer } from "../components/ui/Composer";
+import { MessageList } from "../components/ui/MessageList";
 import {
-  memo,
-  useEffect,
-  useRef,
-  useState,
-  type ChangeEvent,
-} from 'react'
-import { Composer } from '../components/ui/Composer'
-import { MessageList } from '../components/ui/MessageList'
-import { askQuestion, uploadFiles } from '../requests/chat'
-import type { ChatMessage, UploadedAsset } from '../types/chat'
-import { acceptedFileTypes, buildPreviewUrl, inferAttachmentKind, revokePreviewUrl } from '../utils/files'
+  askQuestion,
+  clearContext,
+  getUploadStatus,
+  uploadFiles,
+} from "../requests/chat";
+import type {
+  ChatMessage,
+  JobStatus,
+  UploadedAsset,
+  UploadStatusResponse,
+} from "../types/chat";
+import { acceptedFileTypes, inferAttachmentKind } from "../utils/files";
 
-const AUTO_SUBMIT_DELAY_MS = 3000
-
-interface ChatThread {
-  id: string
-  title: string
-  messages: ChatMessage[]
-  uploads: UploadedAsset[]
+function createAsset(file: File): UploadedAsset {
+  return {
+    id: crypto.randomUUID(),
+    file,
+    name: file.name,
+    size: file.size,
+    mimeType: file.type,
+    kind: inferAttachmentKind(file),
+    status: "local",
+  };
 }
 
-function createMessage(role: ChatMessage['role'], content: string, sources?: string[]): ChatMessage {
+function createMessage(role: ChatMessage["role"], content: string): ChatMessage {
   return {
     id: crypto.randomUUID(),
     role,
     content,
     createdAt: new Date().toISOString(),
-    sources,
-    state: 'complete',
-  }
+    state: "complete",
+  };
 }
 
-function createAsset(file: File): UploadedAsset {
-  const kind = inferAttachmentKind(file)
-
-  return {
-    id: crypto.randomUUID(),
-    name: file.name,
-    size: file.size,
-    mimeType: file.type,
-    kind,
-    previewUrl: buildPreviewUrl(file, kind),
-    status: 'uploading',
+function buildStatusText(status: UploadStatusResponse | null, fallback: string) {
+  if (!status) {
+    return fallback;
   }
-}
 
-function createThread(label = 'New chat'): ChatThread {
-  return {
-    id: crypto.randomUUID(),
-    title: label,
-    messages: [],
-    uploads: [],
+  if (status.status === "failed") {
+    return status.error || "Processing failed.";
   }
-}
 
-function buildThreadTitle(messages: ChatMessage[]): string {
-  const firstUserMessage = messages.find((message) => message.role === 'user')
-  return firstUserMessage?.content.slice(0, 28) || 'New chat'
+  if (status.status === "completed") {
+    return "Files are ready to chat.";
+  }
+
+  return "Processing files...";
 }
 
 export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
-  const [threads, setThreads] = useState<ChatThread[]>([])
-  const [activeThreadId, setActiveThreadId] = useState<string>('')
-  const [draft, setDraft] = useState('')
-  const [isSending, setIsSending] = useState(false)
-  const [isListening, setIsListening] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement | null>(null)
-  const conversationRef = useRef<HTMLDivElement | null>(null)
-  const draftRef = useRef('')
-  const threadsRef = useRef<ChatThread[]>([])
-  const recognitionRef = useRef<SpeechRecognitionLike | null>(null)
-  const silenceTimerRef = useRef<number | null>(null)
-  const shouldAutoSubmitRef = useRef(false)
-  const micBaseTextRef = useRef('')
+  const [uploads, setUploads] = useState<UploadedAsset[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [draft, setDraft] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+  const [feedback, setFeedback] = useState("");
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [jobStatus, setJobStatus] = useState<JobStatus | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const conversationRef = useRef<HTMLDivElement | null>(null);
 
-  const SpeechRecognitionApi = window.SpeechRecognition || window.webkitSpeechRecognition
-  const micSupported = Boolean(SpeechRecognitionApi)
+  const isChatReady = jobStatus === "completed";
+  const isProcessing = jobStatus === "queued" || jobStatus === "processing";
 
   useEffect(() => {
-    draftRef.current = draft
-  }, [draft])
-
-  useEffect(() => {
-    threadsRef.current = threads
-  }, [threads])
-
-  const activeThread = threads.find((thread) => thread.id === activeThreadId)
-  const messages = activeThread?.messages ?? []
-  const uploads = activeThread?.uploads ?? []
-  const hasUploads = uploads.length > 0
-  const hasActiveThread = Boolean(activeThreadId)
-
-  useEffect(() => {
-    const conversation = conversationRef.current
-
+    const conversation = conversationRef.current;
     if (conversation) {
-      conversation.scrollTop = conversation.scrollHeight
+      conversation.scrollTop = conversation.scrollHeight;
     }
-  }, [messages, activeThreadId])
+  }, [messages]);
 
   useEffect(() => {
-    return () => {
-      threadsRef.current.forEach((thread) => {
-        thread.uploads.forEach((upload) => revokePreviewUrl(upload.previewUrl))
-      })
-
-      if (silenceTimerRef.current) {
-        window.clearTimeout(silenceTimerRef.current)
-      }
-
-      recognitionRef.current?.stop()
+    if (!jobId || !isProcessing) {
+      return;
     }
-  }, [])
 
-  function updateActiveThread(updater: (thread: ChatThread) => ChatThread) {
-    setThreads((current) =>
-      current.map((thread) => (thread.id === activeThreadId ? updater(thread) : thread)),
-    )
-  }
+    const activeJobId = jobId;
+    let cancelled = false;
+
+    async function pollStatus() {
+      try {
+        const nextStatus = await getUploadStatus(activeJobId);
+        if (cancelled) {
+          return;
+        }
+
+        setJobStatus(nextStatus.status);
+        setFeedback(buildStatusText(nextStatus, "Processing upload..."));
+
+        if (nextStatus.status === "completed") {
+          setUploads((current) =>
+            current.map((upload) => ({ ...upload, status: "ready" })),
+          );
+          setMessages((current) => {
+            if (current.length > 0) {
+              return current;
+            }
+            return [
+              createMessage(
+                "assistant",
+                nextStatus.summary ||
+                  "Upload completed. Ask anything about your files.",
+              ),
+            ];
+          });
+          return;
+        }
+
+        if (nextStatus.status === "failed") {
+          setUploads((current) =>
+            current.map((upload) => ({ ...upload, status: "failed" })),
+          );
+          setMessages((current) => [
+            ...current,
+            createMessage(
+              "assistant",
+              `Upload failed: ${nextStatus.error || "Unknown error."}`,
+            ),
+          ]);
+          return;
+        }
+
+        window.setTimeout(() => {
+          void pollStatus();
+        }, 1500);
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+        const message =
+          error instanceof Error ? error.message : "Failed to fetch upload status.";
+        setFeedback(message);
+        setJobStatus("failed");
+        setUploads((current) =>
+          current.map((upload) => ({ ...upload, status: "failed" })),
+        );
+      }
+    }
+
+    void pollStatus();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [jobId, isProcessing]);
 
   function openFilePicker() {
-    fileInputRef.current?.click()
+    fileInputRef.current?.click();
   }
 
-  function resetSilenceTimer() {
-    if (silenceTimerRef.current) {
-      window.clearTimeout(silenceTimerRef.current)
-    }
-
-    silenceTimerRef.current = window.setTimeout(() => {
-      shouldAutoSubmitRef.current = true
-      recognitionRef.current?.stop()
-    }, AUTO_SUBMIT_DELAY_MS)
+  function resetLocalState() {
+    setUploads([]);
+    setMessages([]);
+    setDraft("");
+    setJobId(null);
+    setJobStatus(null);
   }
 
-  function stopListening() {
-    if (silenceTimerRef.current) {
-      window.clearTimeout(silenceTimerRef.current)
-      silenceTimerRef.current = null
-    }
-
-    recognitionRef.current?.stop()
-    setIsListening(false)
-  }
-
-  async function handleFilesSelected(fileList: FileList | null) {
+  function handleFilesSelected(fileList: FileList | null) {
     if (!fileList || fileList.length === 0) {
-      return
+      return;
     }
 
-    const files = Array.from(fileList)
-    const nextAssets = files.map(createAsset)
+    const selectedFiles = Array.from(fileList);
+    const firstKind = inferAttachmentKind(selectedFiles[0]);
+    const sameKindFiles = selectedFiles.filter(
+      (file) => inferAttachmentKind(file) === firstKind,
+    );
+    const skippedCount = selectedFiles.length - sameKindFiles.length;
 
-    let currentThreadId = activeThreadId
-    if (!currentThreadId) {
-      const newThread = createThread()
-      setThreads((current) => [newThread, ...current])
-      setActiveThreadId(newThread.id)
-      currentThreadId = newThread.id
+    resetLocalState();
+    setUploads(sameKindFiles.map(createAsset));
+
+    if (skippedCount > 0) {
+      setFeedback(
+        `Kept ${sameKindFiles.length} ${firstKind} file${sameKindFiles.length === 1 ? "" : "s"} and skipped ${skippedCount} mismatched file${skippedCount === 1 ? "" : "s"}.`,
+      );
+      return;
     }
 
-    setThreads((current) =>
-      current.map((thread) =>
-        thread.id === currentThreadId
-          ? { ...thread, uploads: [...thread.uploads, ...nextAssets] }
-          : thread,
-      ),
-    )
-
-    try {
-      const responses = await uploadFiles(files)
-
-      setThreads((current) =>
-        current.map((thread) =>
-          thread.id === currentThreadId
-            ? {
-                ...thread,
-                uploads: thread.uploads.map((asset) => {
-                  const matchedIndex = nextAssets.findIndex((nextAsset) => nextAsset.id === asset.id)
-
-                  if (matchedIndex === -1) {
-                    return asset
-                  }
-
-                  const response = responses[matchedIndex]
-
-                  return {
-                    ...asset,
-                    id: response.fileId,
-                    status: response.status === 'ready' ? 'ready' : 'uploading',
-                  }
-                }),
-              }
-            : thread,
-        ),
-      )
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Upload failed. Please try again.'
-
-      setThreads((current) =>
-        current.map((thread) =>
-          thread.id === currentThreadId
-            ? {
-                ...thread,
-                uploads: thread.uploads.map((asset) =>
-                  nextAssets.some((nextAsset) => nextAsset.id === asset.id)
-                    ? { ...asset, status: 'failed' }
-                    : asset,
-                ),
-                messages: [...thread.messages, createMessage('assistant', `Upload issue: ${message}`)],
-              }
-            : thread,
-        ),
-      )
-    }
-  }
-
-  async function handleSubmit(overridePrompt?: string) {
-    const prompt = (overridePrompt ?? draftRef.current).trim()
-
-    if (!prompt || !hasUploads || !activeThreadId) {
-      return
-    }
-
-    const userMessage = createMessage('user', prompt)
-    setDraft('')
-    draftRef.current = ''
-    setIsSending(true)
-
-    updateActiveThread((thread) => {
-      const nextMessages = [...thread.messages, userMessage]
-
-      return {
-        ...thread,
-        title: buildThreadTitle(nextMessages),
-        messages: nextMessages,
-      }
-    })
-
-    try {
-      const response = await askQuestion({
-        prompt,
-        activeFileIds: uploads.filter((upload) => upload.status === 'ready').map((upload) => upload.id),
-      })
-
-      updateActiveThread((thread) => {
-        const nextMessages = [...thread.messages, createMessage('assistant', response.answer, response.sources)]
-
-        return {
-          ...thread,
-          title: buildThreadTitle(nextMessages),
-          messages: nextMessages,
-        }
-      })
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Request failed. Please try again.'
-
-      updateActiveThread((thread) => ({
-        ...thread,
-        messages: [...thread.messages, createMessage('assistant', `The request failed: ${message}`)],
-      }))
-    } finally {
-      setIsSending(false)
-    }
-  }
-
-  function startListening() {
-    if (!SpeechRecognitionApi) {
-      return
-    }
-
-    recognitionRef.current?.stop()
-
-    const recognition = new SpeechRecognitionApi()
-    recognition.lang = 'en-US'
-    recognition.continuous = true
-    recognition.interimResults = true
-
-    micBaseTextRef.current = draftRef.current.trim()
-    shouldAutoSubmitRef.current = false
-
-    recognition.onstart = () => {
-      setIsListening(true)
-      resetSilenceTimer()
-    }
-
-    recognition.onresult = (event) => {
-      let transcript = ''
-
-      for (let index = event.resultIndex; index < event.results.length; index += 1) {
-        transcript += event.results[index][0].transcript
-      }
-
-      const currentBase = micBaseTextRef.current
-      const nextDraft = [currentBase, transcript.trim()].filter(Boolean).join(' ').trim()
-      setDraft(nextDraft)
-      draftRef.current = nextDraft
-      resetSilenceTimer()
-    }
-
-    recognition.onerror = (event: SpeechRecognitionErrorEventLike) => {
-      console.error('Speech recognition error:', event.error, event.message)
-      setIsListening(false)
-    }
-
-    recognition.onend = () => {
-      setIsListening(false)
-
-      if (silenceTimerRef.current) {
-        window.clearTimeout(silenceTimerRef.current)
-        silenceTimerRef.current = null
-      }
-
-      if (shouldAutoSubmitRef.current) {
-        shouldAutoSubmitRef.current = false
-        void handleSubmit(draftRef.current)
-      }
-    }
-
-    recognitionRef.current = recognition
-    recognition.start()
-  }
-
-  function toggleMic() {
-    if (isListening) {
-      shouldAutoSubmitRef.current = false
-      stopListening()
-      return
-    }
-
-    startListening()
+    setFeedback(
+      `${sameKindFiles.length} file${sameKindFiles.length === 1 ? "" : "s"} selected. Submit to start background processing.`,
+    );
   }
 
   function handleInputChange(event: ChangeEvent<HTMLInputElement>) {
-    void handleFilesSelected(event.target.files)
-    event.target.value = ''
+    handleFilesSelected(event.target.files);
+    event.target.value = "";
   }
 
-  function handleRemoveUpload(id: string) {
-    const found = uploads.find((asset) => asset.id === id)
-
-    if (found?.previewUrl) {
-      revokePreviewUrl(found.previewUrl)
+  async function clearWorkspace() {
+    if (uploads.length === 0 || isSubmitting || isSending) {
+      return;
     }
 
-    updateActiveThread((thread) => ({
-      ...thread,
-      uploads: thread.uploads.filter((asset) => asset.id !== id),
-    }))
+    setIsSubmitting(true);
+    setFeedback("Clearing saved context...");
+
+    try {
+      const response = await clearContext();
+      resetLocalState();
+      setFeedback(response.message);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to clear saved context.";
+      setFeedback(message);
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
-  function handleNewChat() {
-    stopListening()
-    // Remove any threads that have no messages (e.g. upload-only threads that were never chatted in)
-    setThreads((current) => current.filter((thread) => thread.messages.length > 0))
-    setActiveThreadId('')
-    setDraft('')
-    draftRef.current = ''
+  async function handleUploadSubmit() {
+    if (uploads.length === 0 || isSubmitting) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    setFeedback("Uploading files...");
+    setUploads((current) =>
+      current.map((upload) => ({ ...upload, status: "uploading" })),
+    );
+    setMessages([]);
+
+    try {
+      const response = await uploadFiles(uploads.map((upload) => upload.file));
+      setJobId(response.job_id);
+      setJobStatus(response.status);
+      setUploads((current) =>
+        current.map((upload) => ({ ...upload, status: "processing" })),
+      );
+      setFeedback("Upload accepted. Background processing started.");
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Upload failed. Please try again.";
+      setUploads((current) =>
+        current.map((upload) => ({ ...upload, status: "failed" })),
+      );
+      setJobStatus("failed");
+      setFeedback(message);
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
-  function handleSelectThread(threadId: string) {
-    stopListening()
-    setActiveThreadId(threadId)
-    setDraft('')
-    draftRef.current = ''
+  async function handleChatSubmit() {
+    const question = draft.trim();
+    if (!question || isSending || !isChatReady) {
+      return;
+    }
+
+    setDraft("");
+    setIsSending(true);
+    setMessages((current) => [...current, createMessage("user", question)]);
+
+    try {
+      const response = await askQuestion({ question });
+      setMessages((current) => [
+        ...current,
+        createMessage("assistant", response.answer),
+      ]);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Chat request failed. Please try again.";
+      setMessages((current) => [
+        ...current,
+        createMessage("assistant", `Request failed: ${message}`),
+      ]);
+    } finally {
+      setIsSending(false);
+    }
   }
 
   return (
-    <div className="layout-shell">
-      <aside className="sidebar-simple">
-        <div className="sidebar-brand">
-          <h1>Rag-AI</h1>
-          <p>Your chat history</p>
-        </div>
-
-        <button type="button" className="primary-button sidebar-new-chat" onClick={handleNewChat}>
-          New chat
-        </button>
-
-        <div className="sidebar-history">
-          {threads.filter((thread) => thread.messages.length > 0).map((thread) => (
-            <button
-              key={thread.id}
-              type="button"
-              className={`history-item ${thread.id === activeThreadId ? 'active' : ''}`}
-              onClick={() => handleSelectThread(thread.id)}
-            >
-              {thread.title}
-            </button>
-          ))}
-        </div>
-      </aside>
-
-      <div className="simple-page">
-        <header className="simple-header">
+    <div className="app-shell">
+      <div className="chat-layout">
+        <header className="workspace-header">
           <div>
-            <h2>Rag-AI</h2>
-            <p>Upload when you want, then ask with text or mic.</p>
+            <p className="workspace-label">RAG Chat</p>
+            <h1>Upload, process, chat</h1>
+          </div>
+
+          <div className="workspace-actions">
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={openFilePicker}
+              disabled={isSubmitting || isSending}
+            >
+              {uploads.length > 0 ? "Replace files" : "Choose files"}
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => void clearWorkspace()}
+              disabled={uploads.length === 0 || isSubmitting || isSending}
+            >
+              Clear
+            </button>
+            <button
+              type="button"
+              className="primary-button"
+              onClick={() => void handleUploadSubmit()}
+              disabled={
+                uploads.length === 0 || isSubmitting || isSending || isProcessing
+              }
+            >
+              {isSubmitting ? "Submitting..." : isProcessing ? "Processing..." : "Submit"}
+            </button>
           </div>
         </header>
 
-        <main className="simple-main">
-          {!hasActiveThread ? (
-            /* ── PRE-CHAT: Upload zone only ── */
-            <section className="upload-zone">
-              <div className="upload-zone-content">
-                <h3>Start a new chat by uploading files</h3>
-                <p>Add a PDF, image, video, or audio file to begin.</p>
-                <button type="button" className="primary-button" onClick={openFilePicker}>
-                  Upload Files
-                </button>
-              </div>
-            </section>
+        <section className="uploaded-files-bar">
+          <div className="uploaded-files-top">
+            <div className="uploaded-files-title">
+              {isChatReady ? "Uploaded files" : "Selected files"}
+            </div>
+            {jobStatus ? (
+              <span className={`status-pill ${jobStatus}`}>{jobStatus}</span>
+            ) : null}
+          </div>
+
+          {uploads.length > 0 ? (
+            <div className="uploaded-file-list">
+              {uploads.map((upload) => (
+                <span key={upload.id} className="file-pill">
+                  {upload.name}
+                </span>
+              ))}
+            </div>
           ) : (
-            /* ── CHAT VIEW: Pinned uploads + conversation + composer ── */
-            <>
-              <section className="upload-list-simple pinned-uploads-banner">
-                {uploads.map((upload) => (
-                  <div key={upload.id} className="upload-pill">
-                    <span>{upload.name}</span>
-                    <button type="button" onClick={() => handleRemoveUpload(upload.id)}>
-                      ×
-                    </button>
-                  </div>
-                ))}
-                <button type="button" className="add-more-files-button" onClick={openFilePicker}>
-                  + Add file
-                </button>
-              </section>
-
-              <section className="conversation simple-conversation" ref={conversationRef}>
-                <MessageList messages={messages} hasUploads={hasUploads} />
-              </section>
-
-              <Composer
-                value={draft}
-                isSending={isSending}
-                isListening={isListening}
-                isDisabled={!hasUploads}
-                micSupported={micSupported}
-                onChange={setDraft}
-                onSubmit={() => void handleSubmit()}
-                onOpenPicker={openFilePicker}
-                onMicToggle={toggleMic}
-              />
-            </>
+            <p className="uploaded-files-empty">No files selected yet.</p>
           )}
+        </section>
 
-          <input
-            ref={fileInputRef}
-            type="file"
-            className="hidden-input"
-            accept={acceptedFileTypes}
-            multiple
-            onChange={handleInputChange}
+        {feedback ? <p className="status-text">{feedback}</p> : null}
+
+        <section className="chat-panel">
+          <div className="chat-scroll" ref={conversationRef}>
+            <MessageList
+              messages={messages}
+              hasUploads={uploads.length > 0}
+              isReady={isChatReady}
+              isProcessing={isProcessing}
+            />
+          </div>
+
+          <Composer
+            value={draft}
+            isSending={isSending}
+            isDisabled={!isChatReady}
+            onChange={setDraft}
+            onSubmit={() => void handleChatSubmit()}
           />
-        </main>
+        </section>
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          className="hidden-input"
+          accept={acceptedFileTypes}
+          multiple
+          onChange={handleInputChange}
+        />
       </div>
     </div>
-  )
-})
+  );
+});
