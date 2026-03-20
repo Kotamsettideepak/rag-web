@@ -63,7 +63,7 @@ export interface UploadFilesResponse {
   job_id: string;
   status: JobStatus;
   message: string;
-  summary: string;
+  summary?: string;
   files: UploadJobFile[];
   metrics: JobMetrics;
   accepted: boolean;

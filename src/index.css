@@ -297,6 +297,75 @@ button {
   cursor: not-allowed;
 }
 
+.processing-gate {
+  padding: 16px 18px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border: 1px solid #e7e5e4;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #fafaf9, #f5f5f4);
+  flex-shrink: 0;
+}
+
+.processing-gate.active {
+  border-color: #bfdbfe;
+  background: linear-gradient(135deg, #f8fbff, #eef6ff);
+}
+
+.processing-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.processing-indicator span {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: #2563eb;
+  opacity: 0.28;
+  animation: processingPulse 1.2s infinite ease-in-out;
+}
+
+.processing-indicator span:nth-child(2) {
+  animation-delay: 0.16s;
+}
+
+.processing-indicator span:nth-child(3) {
+  animation-delay: 0.32s;
+}
+
+.processing-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.processing-copy strong {
+  font-size: 0.96rem;
+  color: #111827;
+}
+
+.processing-copy span {
+  color: #57534e;
+  font-size: 0.93rem;
+}
+
+@keyframes processingPulse {
+  0%,
+  80%,
+  100% {
+    transform: scale(0.8);
+    opacity: 0.28;
+  }
+
+  40% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
 @media (max-width: 768px) {
   .app-shell {
     padding: 12px;
@@ -311,7 +380,8 @@ button {
   .workspace-header,
   .uploaded-files-top,
   .workspace-actions,
-  .composer {
+  .composer,
+  .processing-gate {
     flex-direction: column;
     align-items: stretch;
   }

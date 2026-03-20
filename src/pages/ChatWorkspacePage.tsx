@@ -73,6 +73,10 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
   const isProcessing = jobStatus === "queued" || jobStatus === "processing";
 
   useEffect(() => {
+    document.title = "RAG-AI";
+  }, []);
+
+  useEffect(() => {
     const conversation = conversationRef.current;
     if (conversation) {
       conversation.scrollTop = conversation.scrollHeight;
@@ -363,17 +367,6 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
       setUploads((current) =>
         current.map((upload) => ({ ...upload, status: "ready" })),
       );
-      setMessages((current) => {
-        if (current.length > 0) {
-          return current;
-        }
-        return [
-          createMessage(
-            "assistant",
-            event.summary || "Upload completed. Ask anything about your files.",
-          ),
-        ];
-      });
       return;
     }
 
@@ -402,7 +395,7 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
       <div className="chat-layout">
         <header className="workspace-header">
           <div>
-            <p className="workspace-label">RAG Chat</p>
+            <p className="workspace-label">RAG-AI</p>
             <h1>Upload, process, chat</h1>
           </div>
 
@@ -471,13 +464,35 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
             />
           </div>
 
-          <Composer
-            value={draft}
-            isSending={isSending}
-            isDisabled={!isChatReady}
-            onChange={setDraft}
-            onSubmit={() => void handleChatSubmit()}
-          />
+          {isChatReady ? (
+            <Composer
+              value={draft}
+              isSending={isSending}
+              isDisabled={!isChatReady}
+              onChange={setDraft}
+              onSubmit={() => void handleChatSubmit()}
+            />
+          ) : (
+            <div className={`processing-gate ${isProcessing ? "active" : ""}`}>
+              <div className="processing-indicator" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </div>
+              <div className="processing-copy">
+                <strong>
+                  {isProcessing
+                    ? "Building your RAG knowledge base..."
+                    : "Upload files to unlock chat."}
+                </strong>
+                <span>
+                  {isProcessing
+                    ? "We are extracting text, creating embeddings, and saving everything to the vector database."
+                    : "Once processing finishes, the chat input will appear here."}
+                </span>
+              </div>
+            </div>
+          )}
         </section>
 
         <input

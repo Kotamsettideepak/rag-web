@@ -38,7 +38,6 @@ export async function uploadFiles(files: File[]): Promise<UploadFilesResponse> {
       job_id: jobId,
       status: "queued",
       message: "Upload accepted. Processing in background.",
-      summary: "Upload accepted. Processing in background.",
       files: files.map((file) => ({
         file_id: crypto.randomUUID(),
         file_name: file.name,
@@ -105,7 +104,7 @@ export async function getUploadStatus(jobId: string): Promise<UploadStatusRespon
         status: isDone ? "completed" : "processing",
       })),
       summary: isDone
-        ? "Upload completed. The files were parsed, chunked, embedded, and stored."
+        ? "Upload completed. The files are ready for chat."
         : "Background processing is running.",
       metrics: {
         parse_duration_ms: isDone ? 900 : 0,
