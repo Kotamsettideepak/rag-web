@@ -5,6 +5,7 @@ import {
   clearContext,
   createChatSocket,
   createUploadStatusSocket,
+  sendVoiceChat,
   uploadFiles,
 } from "../requests/chat";
 import type {
@@ -39,6 +40,16 @@ function createMessage(role: ChatMessage["role"], content: string): ChatMessage 
   };
 }
 
+function createPendingAssistantMessage(copy = ""): ChatMessage {
+  return {
+    id: crypto.randomUUID(),
+    role: "assistant",
+    content: copy,
+    createdAt: new Date().toISOString(),
+    state: "pending",
+  };
+}
+
 function buildStatusText(status: UploadStatusResponse | null, fallback: string) {
   if (!status) {
     return fallback;
@@ -63,11 +74,22 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
   const [isSending, setIsSending] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [jobStatus, setJobStatus] = useState<JobStatus | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const conversationRef = useRef<HTMLDivElement | null>(null);
   const chatSocketRef = useRef<WebSocket | null>(null);
   const uploadSocketRef = useRef<WebSocket | null>(null);
   const activeAssistantMessageIdRef = useRef<string | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordedChunksRef = useRef<Blob[]>([]);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
+  const silenceDeadlineRef = useRef<number | null>(null);
+  const hasDetectedSpeechRef = useRef(false);
+  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
+  const voiceAbortRef = useRef<AbortController | null>(null);
 
   const isChatReady = jobStatus === "completed";
   const isProcessing = jobStatus === "queued" || jobStatus === "processing";
@@ -85,6 +107,9 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
 
   useEffect(() => {
     return () => {
+      stopVoiceCapture();
+      stopPlaybackAudio();
+      voiceAbortRef.current?.abort();
       chatSocketRef.current?.close();
       uploadSocketRef.current?.close();
       chatSocketRef.current = null;
@@ -97,6 +122,9 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
   }
 
   function resetLocalState() {
+    stopVoiceCapture();
+    stopPlaybackAudio();
+    voiceAbortRef.current?.abort();
     chatSocketRef.current?.close();
     uploadSocketRef.current?.close();
     chatSocketRef.current = null;
@@ -202,7 +230,11 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
 
     setDraft("");
     setIsSending(true);
-    setMessages((current) => [...current, createMessage("user", question)]);
+    setMessages((current) => [
+      ...current,
+      createMessage("user", question),
+      createPendingAssistantMessage(),
+    ]);
 
     try {
       await sendQuestionOverSocket(question);
@@ -216,6 +248,210 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
     } finally {
       setIsSending(false);
     }
+  }
+
+  async function handleVoiceToggle() {
+    if (!isChatReady) {
+      return;
+    }
+
+    if (isRecording) {
+      mediaRecorderRef.current?.stop();
+      return;
+    }
+
+    voiceAbortRef.current?.abort();
+    voiceAbortRef.current = null;
+    stopPlaybackAudio();
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
+      const mediaRecorder = new MediaRecorder(stream);
+      recordedChunksRef.current = [];
+      hasDetectedSpeechRef.current = false;
+      silenceDeadlineRef.current = null;
+
+      mediaRecorder.addEventListener("dataavailable", (event) => {
+        if (event.data.size > 0) {
+          recordedChunksRef.current.push(event.data);
+        }
+      });
+
+      mediaRecorder.addEventListener("stop", () => {
+        const recordedBlob = new Blob(recordedChunksRef.current, {
+          type: mediaRecorder.mimeType || "audio/webm",
+        });
+        stopVoiceCapture();
+        void handleVoiceSubmit(recordedBlob);
+      });
+
+      mediaRecorderRef.current = mediaRecorder;
+      mediaRecorder.start(250);
+      setupSilenceDetection(stream);
+      setIsRecording(true);
+      setFeedback("Listening... pause for 3 seconds to send automatically.");
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to access microphone.";
+      setFeedback(message);
+    }
+  }
+
+  async function handleVoiceSubmit(audioBlob: Blob) {
+    if (audioBlob.size === 0) {
+      setFeedback("Recorded audio was empty.");
+      return;
+    }
+
+    setIsSending(true);
+    setFeedback("Transcribing and answering...");
+    const controller = new AbortController();
+    voiceAbortRef.current = controller;
+    setMessages((current) => [...current, createPendingAssistantMessage()]);
+
+    try {
+      const response = await sendVoiceChat(audioBlob, controller.signal);
+      setMessages((current) => {
+        const nextMessages = [...current];
+        const pendingIndex = nextMessages.findIndex(
+          (message) => message.role === "assistant" && message.state === "pending",
+        );
+        if (pendingIndex >= 0) {
+          nextMessages.splice(pendingIndex, 1);
+        }
+        return [
+          ...nextMessages,
+          createMessage("user", response.transcript),
+          createMessage("assistant", response.answer),
+        ];
+      });
+
+      if (response.audio_base64) {
+        stopPlaybackAudio();
+        const audio = new Audio(
+          `data:${response.audio_mime_type};base64,${response.audio_base64}`,
+        );
+        currentAudioRef.current = audio;
+        audio.addEventListener("ended", () => {
+          if (currentAudioRef.current === audio) {
+            currentAudioRef.current = null;
+          }
+        });
+        void audio.play();
+      }
+
+      setFeedback("Voice response ready.");
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Voice chat failed. Please try again.";
+      if (error instanceof DOMException && error.name === "AbortError") {
+        setMessages((current) =>
+          current.filter((message) => !(message.role === "assistant" && message.state === "pending")),
+        );
+        setFeedback("Voice request interrupted. Listening again.");
+        return;
+      }
+      setMessages((current) => {
+        const nextMessages = current.filter(
+          (entry) => !(entry.role === "assistant" && entry.state === "pending"),
+        );
+        return [...nextMessages, createMessage("assistant", `Voice request failed: ${message}`)];
+      });
+      setFeedback(message);
+    } finally {
+      voiceAbortRef.current = null;
+      setIsSending(false);
+    }
+  }
+
+  function setupSilenceDetection(stream: MediaStream) {
+    const AudioContextCtor =
+      window.AudioContext ||
+      (window as typeof window & { webkitAudioContext?: typeof AudioContext })
+        .webkitAudioContext;
+    if (!AudioContextCtor) {
+      return;
+    }
+
+    const audioContext = new AudioContextCtor();
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = 2048;
+    const source = audioContext.createMediaStreamSource(stream);
+    source.connect(analyser);
+
+    audioContextRef.current = audioContext;
+    analyserRef.current = analyser;
+
+    const samples = new Uint8Array(analyser.fftSize);
+    const silenceGapMs = 3000;
+    const speechThreshold = 0.02;
+
+    const inspect = () => {
+      const currentAnalyser = analyserRef.current;
+      if (!currentAnalyser || !mediaRecorderRef.current) {
+        return;
+      }
+
+      currentAnalyser.getByteTimeDomainData(samples);
+      let sumSquares = 0;
+      for (const sample of samples) {
+        const normalized = (sample - 128) / 128;
+        sumSquares += normalized * normalized;
+      }
+
+      const rms = Math.sqrt(sumSquares / samples.length);
+      const now = Date.now();
+      if (rms > speechThreshold) {
+        hasDetectedSpeechRef.current = true;
+        silenceDeadlineRef.current = now + silenceGapMs;
+      } else if (
+        hasDetectedSpeechRef.current &&
+        silenceDeadlineRef.current !== null &&
+        now >= silenceDeadlineRef.current
+      ) {
+        mediaRecorderRef.current.stop();
+        return;
+      }
+
+      animationFrameRef.current = window.requestAnimationFrame(inspect);
+    };
+
+    silenceDeadlineRef.current = Date.now() + silenceGapMs;
+    animationFrameRef.current = window.requestAnimationFrame(inspect);
+  }
+
+  function stopVoiceCapture() {
+    if (animationFrameRef.current !== null) {
+      window.cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+
+    analyserRef.current?.disconnect();
+    analyserRef.current = null;
+
+    if (audioContextRef.current) {
+      void audioContextRef.current.close();
+      audioContextRef.current = null;
+    }
+
+    mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+    mediaStreamRef.current = null;
+
+    mediaRecorderRef.current = null;
+    hasDetectedSpeechRef.current = false;
+    silenceDeadlineRef.current = null;
+    setIsRecording(false);
+  }
+
+  function stopPlaybackAudio() {
+    if (!currentAudioRef.current) {
+      return;
+    }
+
+    currentAudioRef.current.pause();
+    currentAudioRef.current.currentTime = 0;
+    currentAudioRef.current = null;
   }
 
   function ensureSocket(): Promise<WebSocket> {
@@ -262,10 +498,27 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
 
   function handleSocketMessage(event: ChatStreamEvent) {
     if (event.type === "start") {
-      const assistantMessage = createMessage("assistant", "");
-      assistantMessage.state = "streaming";
-      activeAssistantMessageIdRef.current = assistantMessage.id;
-      setMessages((current) => [...current, assistantMessage]);
+      setMessages((current) => {
+        const nextMessages = [...current];
+        const pendingIndex = nextMessages.findIndex(
+          (message) => message.role === "assistant" && message.state === "pending",
+        );
+
+        if (pendingIndex >= 0) {
+          nextMessages[pendingIndex] = {
+            ...nextMessages[pendingIndex],
+            content: "",
+            state: "streaming",
+          };
+          activeAssistantMessageIdRef.current = nextMessages[pendingIndex].id;
+          return nextMessages;
+        }
+
+        const assistantMessage = createMessage("assistant", "");
+        assistantMessage.state = "streaming";
+        activeAssistantMessageIdRef.current = assistantMessage.id;
+        return [...nextMessages, assistantMessage];
+      });
       return;
     }
 
@@ -319,7 +572,9 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
       const errorMessage = event.message || "Streaming failed.";
       setFeedback(errorMessage);
       setMessages((current) => [
-        ...current,
+        ...current.filter(
+          (message) => !(message.role === "assistant" && message.state === "pending"),
+        ),
         createMessage("assistant", `Request failed: ${errorMessage}`),
       ]);
     }
@@ -469,8 +724,10 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
               value={draft}
               isSending={isSending}
               isDisabled={!isChatReady}
+              isRecording={isRecording}
               onChange={setDraft}
               onSubmit={() => void handleChatSubmit()}
+              onVoiceToggle={() => void handleVoiceToggle()}
             />
           ) : (
             <div className={`processing-gate ${isProcessing ? "active" : ""}`}>

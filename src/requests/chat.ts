@@ -3,6 +3,7 @@ import type {
   AskQuestionResponse,
   ChatStreamEvent,
   ClearContextResponse,
+  VoiceChatResponse,
   UploadFilesResponse,
   UploadStatusResponse,
   UploadStatusStreamEvent,
@@ -169,6 +170,36 @@ export async function askQuestion(
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export async function sendVoiceChat(
+  audio: Blob,
+  signal?: AbortSignal,
+): Promise<VoiceChatResponse> {
+  if (USE_MOCKS) {
+    await delay(900);
+    return {
+      transcript: "Mock transcript",
+      answer: "Mock voice answer",
+      audio_base64: "",
+      audio_mime_type: "audio/mpeg",
+    };
+  }
+
+  const formData = new FormData();
+  formData.append("audio", audio, "voice-question.webm");
+
+  const response = await fetch(`${apiBaseUrl}/voice/chat`, {
+    method: "POST",
+    body: formData,
+    signal,
+  });
+
+  if (!response.ok) {
+    throw new Error(`Voice chat failed (status ${response.status})`);
+  }
+
+  return (await response.json()) as VoiceChatResponse;
 }
 
 export function createChatSocket(

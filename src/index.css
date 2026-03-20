@@ -250,6 +250,57 @@ button {
   margin-top: 8px;
 }
 
+.message-loader {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 56px;
+}
+
+.message-loader-bars {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 5px;
+  height: 28px;
+}
+
+.message-loader-bars span {
+  width: 8px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #2563eb, #60a5fa);
+  animation: messageLoaderBars 1s infinite ease-in-out;
+}
+
+.message-loader-bars span:nth-child(1) {
+  height: 12px;
+}
+
+.message-loader-bars span:nth-child(2) {
+  height: 22px;
+  animation-delay: 0.12s;
+}
+
+.message-loader-bars span:nth-child(3) {
+  height: 16px;
+  animation-delay: 0.24s;
+}
+
+.message-loader-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.message-loader-copy strong {
+  color: #111827;
+  font-size: 0.96rem;
+}
+
+.message-loader-copy span {
+  color: #57534e;
+  font-size: 0.92rem;
+}
+
 .composer {
   padding: 10px;
   display: flex;
@@ -362,6 +413,19 @@ button {
 
   40% {
     transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes messageLoaderBars {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.55;
+  }
+
+  50% {
+    transform: translateY(-4px);
     opacity: 1;
   }
 }

@@ -4,16 +4,20 @@ interface ComposerProps {
   value: string;
   isSending: boolean;
   isDisabled: boolean;
+  isRecording?: boolean;
   onChange: (value: string) => void;
   onSubmit: () => void;
+  onVoiceToggle?: () => void;
 }
 
 export const Composer = memo(function Composer({
   value,
   isSending,
   isDisabled,
+  isRecording = false,
   onChange,
   onSubmit,
+  onVoiceToggle,
 }: ComposerProps) {
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -38,6 +42,15 @@ export const Composer = memo(function Composer({
         }
         disabled={isDisabled}
       />
+
+      <button
+        type="button"
+        className="send-button"
+        disabled={isDisabled}
+        onClick={onVoiceToggle}
+      >
+        {isRecording ? "Listening..." : "Speak"}
+      </button>
 
       <button
         type="submit"

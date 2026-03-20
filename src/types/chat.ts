@@ -22,7 +22,7 @@ export interface ChatMessage {
   content: string;
   createdAt: string;
   sources?: string[];
-  state?: "streaming" | "complete";
+  state?: "pending" | "streaming" | "complete";
 }
 
 export interface AskQuestionRequest {
@@ -31,6 +31,13 @@ export interface AskQuestionRequest {
 
 export interface AskQuestionResponse {
   answer: string;
+}
+
+export interface VoiceChatResponse {
+  transcript: string;
+  answer: string;
+  audio_base64: string;
+  audio_mime_type: string;
 }
 
 export type ChatStreamEventType = "start" | "chunk" | "done" | "error";

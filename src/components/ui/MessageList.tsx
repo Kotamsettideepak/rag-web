@@ -70,14 +70,28 @@ export const MessageList = memo(function MessageList({
             <span>{labelForRole(message.role)}</span>
             <span className="message-time">{formatRelativeLabel(message.createdAt)}</span>
           </div>
-          {(message.state === "streaming" && message.content.length === 0
-            ? "..."
-            : message.content
-          )
-            .split("\n")
-            .map((paragraph, index) => (
-            <p key={`${message.id}-${index}`}>{paragraph}</p>
-          ))}
+          {message.state === "pending" ? (
+            <div className="message-loader" aria-label="Waiting for response">
+              <div className="message-loader-bars" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </div>
+              <div className="message-loader-copy">
+                <strong>Working on it...</strong>
+                <span>Searching your uploaded context and preparing the reply.</span>
+              </div>
+            </div>
+          ) : (
+            (message.state === "streaming" && message.content.length === 0
+              ? "..."
+              : message.content
+            )
+              .split("\n")
+              .map((paragraph, index) => (
+                <p key={`${message.id}-${index}`}>{paragraph}</p>
+              ))
+          )}
         </article>
       ))}
     </div>
