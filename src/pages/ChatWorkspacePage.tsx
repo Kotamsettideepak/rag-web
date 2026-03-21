@@ -7,6 +7,7 @@ import {
   createUploadStatusSocket,
   sendVoiceChat,
   uploadFiles,
+  uploadYouTubeUrl,
 } from "../requests/chat";
 import type {
   ChatStreamEvent,
@@ -50,9 +51,31 @@ function createPendingAssistantMessage(copy = ""): ChatMessage {
   };
 }
 
-function buildStatusText(status: UploadStatusResponse | null, fallback: string) {
+function buildStatusText(
+  status: Pick<UploadStatusResponse, "status" | "stage" | "error"> | null,
+  fallback: string,
+) {
   if (!status) {
     return fallback;
+  }
+
+  switch (status.stage) {
+    case "queued":
+      return "Queued for processing...";
+    case "downloading":
+      return "Downloading video...";
+    case "transcribing":
+      return "Extracting audio and transcribing...";
+    case "chunking":
+      return "Chunking extracted content...";
+    case "embedding":
+      return "Embedding content and saving to the vector database...";
+    case "completed":
+      return "Files are ready to chat.";
+    case "failed":
+      return status.error || "Processing failed.";
+    default:
+      break;
   }
 
   if (status.status === "failed") {
@@ -75,6 +98,8 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
   const [feedback, setFeedback] = useState("");
   const [jobStatus, setJobStatus] = useState<JobStatus | null>(null);
   const [isRecording, setIsRecording] = useState(false);
+  const [youtubeUrl, setYouTubeUrl] = useState("");
+  const [remoteSourceLabel, setRemoteSourceLabel] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const conversationRef = useRef<HTMLDivElement | null>(null);
   const chatSocketRef = useRef<WebSocket | null>(null);
@@ -91,6 +116,7 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
   const voiceAbortRef = useRef<AbortController | null>(null);
 
+  const hasSource = uploads.length > 0 || remoteSourceLabel.trim().length > 0;
   const isChatReady = jobStatus === "completed";
   const isProcessing = jobStatus === "queued" || jobStatus === "processing";
 
@@ -131,6 +157,7 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
     uploadSocketRef.current = null;
     activeAssistantMessageIdRef.current = null;
     setUploads([]);
+    setRemoteSourceLabel("");
     setMessages([]);
     setDraft("");
     setJobStatus(null);
@@ -150,6 +177,7 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
 
     resetLocalState();
     setUploads(sameKindFiles.map(createAsset));
+    setRemoteSourceLabel("");
 
     if (skippedCount > 0) {
       setFeedback(
@@ -169,7 +197,7 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
   }
 
   async function clearWorkspace() {
-    if (uploads.length === 0 || isSubmitting || isSending) {
+    if (!hasSource || isSubmitting || isSending) {
       return;
     }
 
@@ -179,6 +207,7 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
     try {
       const response = await clearContext();
       resetLocalState();
+      setYouTubeUrl("");
       setFeedback(response.message);
     } catch (error) {
       const message =
@@ -207,7 +236,7 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
       setUploads((current) =>
         current.map((upload) => ({ ...upload, status: "processing" })),
       );
-      setFeedback("Upload accepted. Live processing updates connected.");
+      setFeedback(buildStatusText(response, "Upload accepted. Live processing updates connected."));
       connectUploadStatusSocket(response.job_id);
     } catch (error) {
       const message =
@@ -247,6 +276,33 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
       ]);
     } finally {
       setIsSending(false);
+    }
+  }
+
+  async function handleYouTubeSubmit() {
+    const trimmedUrl = youtubeUrl.trim();
+    if (!trimmedUrl || isSubmitting || isSending || isProcessing) {
+      return;
+    }
+
+    resetLocalState();
+    setRemoteSourceLabel(trimmedUrl);
+    setJobStatus("queued");
+    setIsSubmitting(true);
+    setFeedback("Submitting YouTube link...");
+
+    try {
+      const response = await uploadYouTubeUrl(trimmedUrl);
+      setJobStatus(response.status);
+      setFeedback(buildStatusText(response, "Processing YouTube video..."));
+      connectUploadStatusSocket(response.job_id);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "YouTube processing failed. Please try again.";
+      setJobStatus("failed");
+      setFeedback(message);
+    } finally {
+      setIsSubmitting(false);
     }
   }
 
@@ -667,7 +723,7 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
               type="button"
               className="secondary-button"
               onClick={() => void clearWorkspace()}
-              disabled={uploads.length === 0 || isSubmitting || isSending}
+              disabled={!hasSource || isSubmitting || isSending}
             >
               Clear
             </button>
@@ -683,6 +739,25 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
             </button>
           </div>
         </header>
+
+        <section className="youtube-input-row">
+          <input
+            type="url"
+            className="youtube-input"
+            placeholder="Paste a YouTube link"
+            value={youtubeUrl}
+            onChange={(event) => setYouTubeUrl(event.target.value)}
+            disabled={isSubmitting || isSending || isProcessing}
+          />
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => void handleYouTubeSubmit()}
+            disabled={!youtubeUrl.trim() || isSubmitting || isSending || isProcessing}
+          >
+            {isSubmitting && remoteSourceLabel ? "Processing..." : "Process Video"}
+          </button>
+        </section>
 
         <section className="uploaded-files-bar">
           <div className="uploaded-files-top">
@@ -702,6 +777,10 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
                 </span>
               ))}
             </div>
+          ) : remoteSourceLabel ? (
+            <div className="uploaded-file-list">
+              <span className="file-pill">{remoteSourceLabel}</span>
+            </div>
           ) : (
             <p className="uploaded-files-empty">No files selected yet.</p>
           )}
@@ -713,7 +792,7 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
           <div className="chat-scroll" ref={conversationRef}>
             <MessageList
               messages={messages}
-              hasUploads={uploads.length > 0}
+              hasUploads={hasSource}
               isReady={isChatReady}
               isProcessing={isProcessing}
             />

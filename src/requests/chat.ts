@@ -38,6 +38,7 @@ export async function uploadFiles(files: File[]): Promise<UploadFilesResponse> {
     return {
       job_id: jobId,
       status: "queued",
+      stage: "queued",
       message: "Upload accepted. Processing in background.",
       files: files.map((file) => ({
         file_id: crypto.randomUUID(),
@@ -78,6 +79,58 @@ export async function uploadFiles(files: File[]): Promise<UploadFilesResponse> {
   return (await response.json()) as UploadFilesResponse;
 }
 
+export async function uploadYouTubeUrl(url: string): Promise<UploadFilesResponse> {
+  if (USE_MOCKS) {
+    await delay(500);
+    const jobId = crypto.randomUUID();
+    mockJobs.set(jobId, {
+      createdAt: Date.now(),
+      fileCount: 1,
+    });
+
+    return {
+      job_id: jobId,
+      status: "queued",
+      stage: "queued",
+      message: "YouTube link accepted. Processing in background.",
+      files: [
+        {
+          file_id: crypto.randomUUID(),
+          file_name: url,
+          pages: 0,
+          status: "queued",
+        },
+      ],
+      metrics: {
+        parse_duration_ms: 0,
+        chunk_duration_ms: 0,
+        embedding_duration_ms: 0,
+        storage_duration_ms: 0,
+        total_duration_ms: 0,
+        throughput_chunks_sec: 0,
+      },
+      accepted: true,
+    };
+  }
+
+  const response = await fetch(`${apiBaseUrl}/upload`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      file_kind: "youtube",
+      url,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`YouTube processing failed (status ${response.status})`);
+  }
+
+  return (await response.json()) as UploadFilesResponse;
+}
+
 export async function getUploadStatus(jobId: string): Promise<UploadStatusResponse> {
   if (USE_MOCKS) {
     await delay(400);
@@ -93,6 +146,7 @@ export async function getUploadStatus(jobId: string): Promise<UploadStatusRespon
     return {
       job_id: jobId,
       status,
+      stage: status === "queued" ? "queued" : isDone ? "completed" : "processing",
       created_at: new Date(job.createdAt).toISOString(),
       updated_at: new Date().toISOString(),
       started_at: new Date(job.createdAt + 200).toISOString(),

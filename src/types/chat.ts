@@ -69,6 +69,7 @@ export interface JobMetrics {
 export interface UploadFilesResponse {
   job_id: string;
   status: JobStatus;
+  stage?: string;
   message: string;
   summary?: string;
   files: UploadJobFile[];
@@ -79,6 +80,7 @@ export interface UploadFilesResponse {
 export interface UploadStatusResponse {
   job_id: string;
   status: JobStatus;
+  stage?: string;
   created_at: string;
   updated_at: string;
   started_at?: string;
