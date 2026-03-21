@@ -1,18 +1,24 @@
 import { memo, useEffect, useRef, useState, type ChangeEvent } from "react";
+import { useAuth } from "../auth/googleAuth";
 import { Composer } from "../components/ui/Composer";
 import { MessageList } from "../components/ui/MessageList";
 import {
   clearContext,
+  createChat,
   createChatSocket,
   createUploadStatusSocket,
+  getChatMessages,
+  listChats,
   sendVoiceChat,
   uploadFiles,
   uploadYouTubeUrl,
 } from "../requests/chat";
 import type {
-  ChatStreamEvent,
   ChatMessage,
+  ChatStreamEvent,
+  ChatSummary,
   JobStatus,
+  StoredMessage,
   UploadedAsset,
   UploadStatusResponse,
   UploadStatusStreamEvent,
@@ -51,6 +57,16 @@ function createPendingAssistantMessage(copy = ""): ChatMessage {
   };
 }
 
+function mapStoredMessage(message: StoredMessage): ChatMessage {
+  return {
+    id: message.id,
+    role: message.role,
+    content: message.content,
+    createdAt: message.created_at,
+    state: "complete",
+  };
+}
+
 function buildStatusText(
   status: Pick<UploadStatusResponse, "status" | "stage" | "error" | "summary"> | null,
   fallback: string,
@@ -85,21 +101,14 @@ function buildStatusText(
     case "failed":
       return status.error || "Processing failed.";
     default:
-      break;
+      return fallback;
   }
-
-  if (status.status === "failed") {
-    return status.error || "Processing failed.";
-  }
-
-  if (status.status === "completed") {
-    return "Your files are ready. You can start chatting now.";
-  }
-
-  return "Processing your files.";
 }
 
 export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
+  const { user, isReady, isAuthenticated, googleClientId, renderGoogleButton, signOut } = useAuth();
+  const [chats, setChats] = useState<ChatSummary[]>([]);
+  const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [uploads, setUploads] = useState<UploadedAsset[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
@@ -125,6 +134,7 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
   const hasDetectedSpeechRef = useRef(false);
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
   const voiceAbortRef = useRef<AbortController | null>(null);
+  const googleButtonRef = useRef<HTMLDivElement | null>(null);
 
   const hasSource = uploads.length > 0 || remoteSourceLabel.trim().length > 0;
   const isChatReady = jobStatus === "completed";
@@ -133,6 +143,29 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
   useEffect(() => {
     document.title = "RAG-AI";
   }, []);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      void loadChatsAndMaybeSelect();
+    } else {
+      setChats([]);
+      setActiveChatId(null);
+      setUploads([]);
+      setMessages([]);
+      setFeedback("");
+      setJobStatus(null);
+      setRemoteSourceLabel("");
+      setYouTubeUrl("");
+    }
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (!isReady || isAuthenticated) {
+      return;
+    }
+
+    renderGoogleButton(googleButtonRef.current);
+  }, [isAuthenticated, isReady, renderGoogleButton]);
 
   useEffect(() => {
     const conversation = conversationRef.current;
@@ -148,29 +181,43 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
       voiceAbortRef.current?.abort();
       chatSocketRef.current?.close();
       uploadSocketRef.current?.close();
-      chatSocketRef.current = null;
-      uploadSocketRef.current = null;
     };
   }, []);
 
-  function openFilePicker() {
-    fileInputRef.current?.click();
+  async function loadChatsAndMaybeSelect(nextChatId?: string) {
+    try {
+      const response = await listChats();
+      setChats(response.chats);
+
+      const targetChatId = nextChatId || activeChatId || response.chats[0]?.id || null;
+      if (targetChatId) {
+        await selectChat(targetChatId, response.chats);
+      }
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "Failed to load chats.");
+    }
   }
 
-  function resetLocalState() {
-    stopVoiceCapture();
-    stopPlaybackAudio();
-    voiceAbortRef.current?.abort();
-    chatSocketRef.current?.close();
-    uploadSocketRef.current?.close();
-    chatSocketRef.current = null;
-    uploadSocketRef.current = null;
-    activeAssistantMessageIdRef.current = null;
+  async function selectChat(chatId: string, availableChats = chats) {
+    setActiveChatId(chatId);
     setUploads([]);
     setRemoteSourceLabel("");
-    setMessages([]);
-    setDraft("");
-    setJobStatus(null);
+    setYouTubeUrl("");
+    setJobStatus("completed");
+
+    try {
+      const response = await getChatMessages(chatId);
+      setMessages(response.messages.map(mapStoredMessage));
+      const activeChat = availableChats.find((chat) => chat.id === chatId);
+      setFeedback(activeChat ? `Switched to "${activeChat.title}".` : "Chat loaded.");
+    } catch (error) {
+      setMessages([]);
+      setFeedback(error instanceof Error ? error.message : "Failed to load messages.");
+    }
+  }
+
+  function openFilePicker() {
+    fileInputRef.current?.click();
   }
 
   function handleFilesSelected(fileList: FileList | null) {
@@ -185,7 +232,6 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
     );
     const skippedCount = selectedFiles.length - sameKindFiles.length;
 
-    resetLocalState();
     setUploads(sameKindFiles.map(createAsset));
     setRemoteSourceLabel("");
 
@@ -197,7 +243,7 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
     }
 
     setFeedback(
-      `${sameKindFiles.length} file${sameKindFiles.length === 1 ? "" : "s"} selected. Submit to start background processing.`,
+      `${sameKindFiles.length} file${sameKindFiles.length === 1 ? "" : "s"} selected for this chat.`,
     );
   }
 
@@ -206,8 +252,25 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
     event.target.value = "";
   }
 
+  async function handleCreateChat() {
+    const title = window.prompt("Enter a chat title", "New Chat");
+    if (title === null) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const response = await createChat(title);
+      await loadChatsAndMaybeSelect(response.chat_id);
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "Failed to create chat.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
   async function clearWorkspace() {
-    if (!hasSource || isSubmitting || isSending) {
+    if (isSubmitting || isSending) {
       return;
     }
 
@@ -216,8 +279,10 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
 
     try {
       const response = await clearContext();
-      resetLocalState();
-      setYouTubeUrl("");
+      setMessages([]);
+      setUploads([]);
+      setRemoteSourceLabel("");
+      setJobStatus(activeChatId ? "completed" : null);
       setFeedback(response.message);
     } catch (error) {
       const message =
@@ -229,24 +294,24 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
   }
 
   async function handleUploadSubmit() {
-    if (uploads.length === 0 || isSubmitting) {
+    if (uploads.length === 0 || isSubmitting || !activeChatId) {
       return;
     }
 
     setIsSubmitting(true);
+    setJobStatus("queued");
     setFeedback("Uploading files...");
     setUploads((current) =>
       current.map((upload) => ({ ...upload, status: "uploading" })),
     );
-    setMessages([]);
 
     try {
-      const response = await uploadFiles(uploads.map((upload) => upload.file));
+      const response = await uploadFiles(uploads.map((upload) => upload.file), activeChatId);
       setJobStatus(response.status);
       setUploads((current) =>
         current.map((upload) => ({ ...upload, status: "processing" })),
       );
-      setFeedback(buildStatusText(response, "Upload accepted. Live processing updates connected."));
+      setFeedback(buildStatusText(response, "Upload accepted."));
       connectUploadStatusSocket(response.job_id);
     } catch (error) {
       const message =
@@ -261,48 +326,20 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
     }
   }
 
-  async function handleChatSubmit() {
-    const question = draft.trim();
-    if (!question || isSending || !isChatReady) {
-      return;
-    }
-
-    setDraft("");
-    setIsSending(true);
-    setMessages((current) => [
-      ...current,
-      createMessage("user", question),
-      createPendingAssistantMessage(),
-    ]);
-
-    try {
-      await sendQuestionOverSocket(question);
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Chat request failed. Please try again.";
-      setMessages((current) => [
-        ...current,
-        createMessage("assistant", `Request failed: ${message}`),
-      ]);
-    } finally {
-      setIsSending(false);
-    }
-  }
-
   async function handleYouTubeSubmit() {
     const trimmedUrl = youtubeUrl.trim();
-    if (!trimmedUrl || isSubmitting || isSending || isProcessing) {
+    if (!trimmedUrl || isSubmitting || isSending || isProcessing || !activeChatId) {
       return;
     }
 
-    resetLocalState();
+    setUploads([]);
     setRemoteSourceLabel(trimmedUrl);
     setJobStatus("queued");
     setIsSubmitting(true);
     setFeedback("Submitting YouTube link...");
 
     try {
-      const response = await uploadYouTubeUrl(trimmedUrl);
+      const response = await uploadYouTubeUrl(trimmedUrl, activeChatId);
       setJobStatus(response.status);
       setFeedback(buildStatusText(response, "Processing YouTube video..."));
       connectUploadStatusSocket(response.job_id);
@@ -316,8 +353,35 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
     }
   }
 
+  async function handleChatSubmit() {
+    const question = draft.trim();
+    if (!question || isSending || !isChatReady || !activeChatId) {
+      return;
+    }
+
+    setDraft("");
+    setIsSending(true);
+    setMessages((current) => [
+      ...current,
+      createMessage("user", question),
+      createPendingAssistantMessage(),
+    ]);
+
+    try {
+      await sendQuestionOverSocket(activeChatId, question);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Chat request failed. Please try again.";
+      setMessages((current) => [
+        ...current.filter((entry) => entry.state !== "pending"),
+        createMessage("assistant", `Request failed: ${message}`),
+      ]);
+      setIsSending(false);
+    }
+  }
+
   async function handleVoiceToggle() {
-    if (!isChatReady) {
+    if (!isChatReady || !activeChatId) {
       return;
     }
 
@@ -365,7 +429,7 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
   }
 
   async function handleVoiceSubmit(audioBlob: Blob) {
-    if (audioBlob.size === 0) {
+    if (audioBlob.size === 0 || !activeChatId) {
       setFeedback("Recorded audio was empty.");
       return;
     }
@@ -377,15 +441,11 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
     setMessages((current) => [...current, createPendingAssistantMessage()]);
 
     try {
-      const response = await sendVoiceChat(audioBlob, controller.signal);
+      const response = await sendVoiceChat(audioBlob, activeChatId, controller.signal);
       setMessages((current) => {
-        const nextMessages = [...current];
-        const pendingIndex = nextMessages.findIndex(
-          (message) => message.role === "assistant" && message.state === "pending",
+        const nextMessages = current.filter(
+          (entry) => !(entry.role === "assistant" && entry.state === "pending"),
         );
-        if (pendingIndex >= 0) {
-          nextMessages.splice(pendingIndex, 1);
-        }
         return [
           ...nextMessages,
           createMessage("user", response.transcript),
@@ -411,19 +471,10 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Voice chat failed. Please try again.";
-      if (error instanceof DOMException && error.name === "AbortError") {
-        setMessages((current) =>
-          current.filter((message) => !(message.role === "assistant" && message.state === "pending")),
-        );
-        setFeedback("Voice request interrupted. Listening again.");
-        return;
-      }
-      setMessages((current) => {
-        const nextMessages = current.filter(
-          (entry) => !(entry.role === "assistant" && entry.state === "pending"),
-        );
-        return [...nextMessages, createMessage("assistant", `Voice request failed: ${message}`)];
-      });
+      setMessages((current) => [
+        ...current.filter((entry) => !(entry.role === "assistant" && entry.state === "pending")),
+        createMessage("assistant", `Voice request failed: ${message}`),
+      ]);
       setFeedback(message);
     } finally {
       voiceAbortRef.current = null;
@@ -503,7 +554,6 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
 
     mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
     mediaStreamRef.current = null;
-
     mediaRecorderRef.current = null;
     hasDetectedSpeechRef.current = false;
     silenceDeadlineRef.current = null;
@@ -638,19 +688,18 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
       const errorMessage = event.message || "Streaming failed.";
       setFeedback(errorMessage);
       setMessages((current) => [
-        ...current.filter(
-          (message) => !(message.role === "assistant" && message.state === "pending"),
-        ),
+        ...current.filter((message) => !(message.role === "assistant" && message.state === "pending")),
         createMessage("assistant", `Request failed: ${errorMessage}`),
       ]);
     }
   }
 
-  async function sendQuestionOverSocket(question: string) {
+  async function sendQuestionOverSocket(chatId: string, question: string) {
     const socket = await ensureSocket();
     socket.send(
       JSON.stringify({
         type: "question",
+        chat_id: chatId,
         question,
       }),
     );
@@ -698,10 +747,7 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
       );
       setMessages((current) => [
         ...current,
-        createMessage(
-          "assistant",
-          `Upload failed: ${event.error || "Unknown error."}`,
-        ),
+        createMessage("assistant", `Upload failed: ${event.error || "Unknown error."}`),
       ]);
       return;
     }
@@ -713,143 +759,191 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
 
   return (
     <div className="app-shell">
-      <div className="chat-layout">
-        <header className="workspace-header">
-          <div>
-            <p className="workspace-label">RAG-AI</p>
-            <h1>Upload, process, chat</h1>
+      {!googleClientId ? (
+        <div className="auth-card">
+          <h1>Google login setup is incomplete</h1>
+          <p>Add `VITE_GOOGLE_CLIENT_ID` in the frontend env and `GOOGLE_CLIENT_ID` in the backend env.</p>
+        </div>
+      ) : !isReady ? (
+        <div className="auth-card">
+          <h1>Loading Google sign-in...</h1>
+          <p>Preparing secure login for your chats and uploaded context.</p>
+        </div>
+      ) : !isAuthenticated ? (
+        <div className="auth-card">
+          <h1>Sign in to continue</h1>
+          <p>Your chats, files, and retrieval context are now isolated per Google account.</p>
+          <div ref={googleButtonRef} className="google-button-slot" />
+        </div>
+      ) : (
+      <div className="chat-layout with-sidebar">
+        <aside className="chat-sidebar">
+          <div className="chat-sidebar-top">
+            <div className="sidebar-user-card">
+              <div className="sidebar-user-meta">
+                <strong>{user?.name}</strong>
+                <span>{user?.email}</span>
+              </div>
+              <button type="button" className="secondary-button sidebar-logout" onClick={signOut}>
+                Logout
+              </button>
+            </div>
           </div>
 
-          <div className="workspace-actions">
+          <div className="chat-sidebar-top">
             <button
               type="button"
-              className="secondary-button"
-              onClick={openFilePicker}
+              className="primary-button sidebar-button"
+              onClick={() => void handleCreateChat()}
               disabled={isSubmitting || isSending}
             >
-              {uploads.length > 0 ? "Replace files" : "Choose files"}
+              New Chat
             </button>
+          </div>
+
+          <div className="chat-history-list">
+            {chats.map((chat) => (
+              <button
+                key={chat.id}
+                type="button"
+                className={`chat-history-item ${activeChatId === chat.id ? "active" : ""}`}
+                onClick={() => void selectChat(chat.id)}
+              >
+                <strong>{chat.title}</strong>
+                <span>{new Date(chat.created_at).toLocaleString()}</span>
+              </button>
+            ))}
+          </div>
+        </aside>
+
+        <div className="chat-main">
+          <header className="workspace-header">
+            <div>
+              <p className="workspace-label">RAG-AI</p>
+              <h1>{activeChatId ? "Multi-chat RAG workspace" : "Create a chat to begin"}</h1>
+            </div>
+
+            <div className="workspace-actions">
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={openFilePicker}
+                disabled={isSubmitting || isSending || !activeChatId}
+              >
+                {uploads.length > 0 ? "Replace files" : "Choose files"}
+              </button>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => void clearWorkspace()}
+                disabled={(!hasSource && messages.length === 0) || isSubmitting || isSending}
+              >
+                Clear
+              </button>
+              <button
+                type="button"
+                className="primary-button"
+                onClick={() => void handleUploadSubmit()}
+                disabled={
+                  uploads.length === 0 || isSubmitting || isSending || isProcessing || !activeChatId
+                }
+              >
+                {isSubmitting ? "Submitting..." : isProcessing ? "Processing..." : "Submit"}
+              </button>
+            </div>
+          </header>
+
+          <section className="youtube-input-row">
+            <input
+              type="url"
+              className="youtube-input"
+              placeholder="Paste a YouTube link"
+              value={youtubeUrl}
+              onChange={(event) => setYouTubeUrl(event.target.value)}
+              disabled={isSubmitting || isSending || isProcessing || !activeChatId}
+            />
             <button
               type="button"
               className="secondary-button"
-              onClick={() => void clearWorkspace()}
-              disabled={!hasSource || isSubmitting || isSending}
+              onClick={() => void handleYouTubeSubmit()}
+              disabled={!youtubeUrl.trim() || isSubmitting || isSending || isProcessing || !activeChatId}
             >
-              Clear
+              {isSubmitting && remoteSourceLabel ? "Processing..." : "Process Video"}
             </button>
-            <button
-              type="button"
-              className="primary-button"
-              onClick={() => void handleUploadSubmit()}
-              disabled={
-                uploads.length === 0 || isSubmitting || isSending || isProcessing
-              }
-            >
-              {isSubmitting ? "Submitting..." : isProcessing ? "Processing..." : "Submit"}
-            </button>
-          </div>
-        </header>
+          </section>
 
-        <section className="youtube-input-row">
+          <section className="uploaded-files-bar">
+            <div className="uploaded-files-top">
+              <div className="uploaded-files-title">
+                {isChatReady ? "Chat context files" : "Selected files"}
+              </div>
+              {jobStatus ? (
+                <span className={`status-pill ${jobStatus}`}>{jobStatus}</span>
+              ) : null}
+            </div>
+
+            {uploads.length > 0 ? (
+              <div className="uploaded-file-list">
+                {uploads.map((upload) => (
+                  <span key={upload.id} className="file-pill">
+                    {upload.name}
+                  </span>
+                ))}
+              </div>
+            ) : remoteSourceLabel ? (
+              <div className="uploaded-file-list">
+                <span className="file-pill">{remoteSourceLabel}</span>
+              </div>
+            ) : (
+              <p className="uploaded-files-empty">
+                {activeChatId ? "No new files selected for this chat." : "Create a chat first."}
+              </p>
+            )}
+          </section>
+
+          {feedback ? <p className="status-text">{feedback}</p> : null}
+
+          <section className="chat-panel">
+            <div className="chat-scroll" ref={conversationRef}>
+              <MessageList
+                messages={messages}
+                hasUploads={hasSource || messages.length > 0}
+                isReady={!!activeChatId}
+                isProcessing={isProcessing}
+              />
+            </div>
+
+            {activeChatId ? (
+              <Composer
+                value={draft}
+                isSending={isSending}
+                isDisabled={!activeChatId || isProcessing}
+                isRecording={isRecording}
+                onChange={setDraft}
+                onSubmit={() => void handleChatSubmit()}
+                onVoiceToggle={() => void handleVoiceToggle()}
+              />
+            ) : (
+              <div className="processing-gate">
+                <div className="processing-copy">
+                  <strong>Create a chat to unlock uploads and messaging.</strong>
+                  <span>Each chat keeps its own files, messages, and retrieval context.</span>
+                </div>
+              </div>
+            )}
+          </section>
+
           <input
-            type="url"
-            className="youtube-input"
-            placeholder="Paste a YouTube link"
-            value={youtubeUrl}
-            onChange={(event) => setYouTubeUrl(event.target.value)}
-            disabled={isSubmitting || isSending || isProcessing}
+            ref={fileInputRef}
+            type="file"
+            className="hidden-input"
+            accept={acceptedFileTypes}
+            multiple
+            onChange={handleInputChange}
           />
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={() => void handleYouTubeSubmit()}
-            disabled={!youtubeUrl.trim() || isSubmitting || isSending || isProcessing}
-          >
-            {isSubmitting && remoteSourceLabel ? "Processing..." : "Process Video"}
-          </button>
-        </section>
-
-        <section className="uploaded-files-bar">
-          <div className="uploaded-files-top">
-            <div className="uploaded-files-title">
-              {isChatReady ? "Uploaded files" : "Selected files"}
-            </div>
-            {jobStatus ? (
-              <span className={`status-pill ${jobStatus}`}>{jobStatus}</span>
-            ) : null}
-          </div>
-
-          {uploads.length > 0 ? (
-            <div className="uploaded-file-list">
-              {uploads.map((upload) => (
-                <span key={upload.id} className="file-pill">
-                  {upload.name}
-                </span>
-              ))}
-            </div>
-          ) : remoteSourceLabel ? (
-            <div className="uploaded-file-list">
-              <span className="file-pill">{remoteSourceLabel}</span>
-            </div>
-          ) : (
-            <p className="uploaded-files-empty">No files selected yet.</p>
-          )}
-        </section>
-
-        {feedback ? <p className="status-text">{feedback}</p> : null}
-
-        <section className="chat-panel">
-          <div className="chat-scroll" ref={conversationRef}>
-            <MessageList
-              messages={messages}
-              hasUploads={hasSource}
-              isReady={isChatReady}
-              isProcessing={isProcessing}
-            />
-          </div>
-
-          {isChatReady ? (
-            <Composer
-              value={draft}
-              isSending={isSending}
-              isDisabled={!isChatReady}
-              isRecording={isRecording}
-              onChange={setDraft}
-              onSubmit={() => void handleChatSubmit()}
-              onVoiceToggle={() => void handleVoiceToggle()}
-            />
-          ) : (
-            <div className={`processing-gate ${isProcessing ? "active" : ""}`}>
-              <div className="processing-indicator" aria-hidden="true">
-                <span />
-                <span />
-                <span />
-              </div>
-              <div className="processing-copy">
-                <strong>
-                  {isProcessing
-                    ? "Building your RAG knowledge base..."
-                    : "Upload files to unlock chat."}
-                </strong>
-                <span>
-                  {isProcessing
-                    ? feedback || "We are extracting data, organizing it, creating embeddings, and saving it to the database."
-                    : "Once processing finishes, the chat input will appear here."}
-                </span>
-              </div>
-            </div>
-          )}
-        </section>
-
-        <input
-          ref={fileInputRef}
-          type="file"
-          className="hidden-input"
-          accept={acceptedFileTypes}
-          multiple
-          onChange={handleInputChange}
-        />
+        </div>
       </div>
+      )}
     </div>
   );
 });

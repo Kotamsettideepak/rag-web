@@ -1,14 +1,17 @@
 import type {
   AskQuestionRequest,
   AskQuestionResponse,
+  ChatMessagesResponse,
   ChatStreamEvent,
   ClearContextResponse,
+  CreateChatResponse,
+  ListChatsResponse,
   VoiceChatResponse,
   UploadFilesResponse,
   UploadStatusResponse,
   UploadStatusStreamEvent,
 } from "../types/chat";
-import { apiBaseUrl, apiRequest, websocketBaseUrl } from "./client";
+import { apiBaseUrl, apiRequest, getAuthToken, websocketBaseUrl } from "./client";
 
 const USE_MOCKS = !import.meta.env.VITE_ENABLE_BACKEND;
 
@@ -26,7 +29,37 @@ const mockJobs = new Map<
   }
 >();
 
-export async function uploadFiles(files: File[]): Promise<UploadFilesResponse> {
+export async function createChat(title: string): Promise<CreateChatResponse> {
+  if (USE_MOCKS) {
+    await delay(200);
+    return { chat_id: crypto.randomUUID() };
+  }
+
+  return apiRequest<CreateChatResponse>("/chat/create", {
+    method: "POST",
+    body: JSON.stringify({ title }),
+  });
+}
+
+export async function listChats(): Promise<ListChatsResponse> {
+  if (USE_MOCKS) {
+    await delay(200);
+    return { chats: [] };
+  }
+
+  return apiRequest<ListChatsResponse>("/chat/list");
+}
+
+export async function getChatMessages(chatId: string): Promise<ChatMessagesResponse> {
+  if (USE_MOCKS) {
+    await delay(200);
+    return { messages: [] };
+  }
+
+  return apiRequest<ChatMessagesResponse>(`/chat/${chatId}/messages`);
+}
+
+export async function uploadFiles(files: File[], chatId: string): Promise<UploadFilesResponse> {
   if (USE_MOCKS) {
     await delay(500);
     const jobId = crypto.randomUUID();
@@ -63,6 +96,7 @@ export async function uploadFiles(files: File[]): Promise<UploadFilesResponse> {
   }
 
   const formData = new FormData();
+  formData.append("chat_id", chatId);
   for (const file of files) {
     formData.append("file", file);
   }
@@ -70,6 +104,7 @@ export async function uploadFiles(files: File[]): Promise<UploadFilesResponse> {
   const response = await fetch(`${apiBaseUrl}/upload`, {
     method: "POST",
     body: formData,
+    headers: getAuthToken() ? { Authorization: `Bearer ${getAuthToken()}` } : {},
   });
 
   if (!response.ok) {
@@ -79,7 +114,7 @@ export async function uploadFiles(files: File[]): Promise<UploadFilesResponse> {
   return (await response.json()) as UploadFilesResponse;
 }
 
-export async function uploadYouTubeUrl(url: string): Promise<UploadFilesResponse> {
+export async function uploadYouTubeUrl(url: string, chatId: string): Promise<UploadFilesResponse> {
   if (USE_MOCKS) {
     await delay(500);
     const jobId = crypto.randomUUID();
@@ -117,9 +152,11 @@ export async function uploadYouTubeUrl(url: string): Promise<UploadFilesResponse
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      ...(getAuthToken() ? { Authorization: `Bearer ${getAuthToken()}` } : {}),
     },
     body: JSON.stringify({
       file_kind: "youtube",
+      chat_id: chatId,
       url,
     }),
   });
@@ -216,7 +253,7 @@ export async function askQuestion(
   if (USE_MOCKS) {
     await delay(900);
     return {
-      answer: `Mocked RAG response for: "${payload.question}"`,
+      answer: `Mocked RAG response for: "${payload.message}"`,
     };
   }
 
@@ -228,6 +265,7 @@ export async function askQuestion(
 
 export async function sendVoiceChat(
   audio: Blob,
+  chatId: string,
   signal?: AbortSignal,
 ): Promise<VoiceChatResponse> {
   if (USE_MOCKS) {
@@ -242,11 +280,13 @@ export async function sendVoiceChat(
 
   const formData = new FormData();
   formData.append("audio", audio, "voice-question.webm");
+  formData.append("chat_id", chatId);
 
   const response = await fetch(`${apiBaseUrl}/voice/chat`, {
     method: "POST",
     body: formData,
     signal,
+    headers: getAuthToken() ? { Authorization: `Bearer ${getAuthToken()}` } : {},
   });
 
   if (!response.ok) {
@@ -264,7 +304,9 @@ export function createChatSocket(
     onError?: () => void;
   } = {},
 ): WebSocket {
-  const socket = new WebSocket(`${websocketBaseUrl}/ws`);
+  const socket = new WebSocket(
+    `${websocketBaseUrl}/ws?google_token=${encodeURIComponent(getAuthToken() || "")}`,
+  );
 
   socket.addEventListener("open", () => {
     handlers.onOpen?.();

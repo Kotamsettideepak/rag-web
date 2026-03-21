@@ -26,7 +26,8 @@ export interface ChatMessage {
 }
 
 export interface AskQuestionRequest {
-  question: string;
+  chat_id: string;
+  message: string;
 }
 
 export interface AskQuestionResponse {
@@ -47,6 +48,21 @@ export interface ChatStreamEvent {
   content?: string;
   answer?: string;
   message?: string;
+}
+
+export interface ChatSummary {
+  id: string;
+  user_id: string;
+  title: string;
+  created_at: string;
+}
+
+export interface StoredMessage {
+  id: string;
+  chat_id: string;
+  role: MessageRole;
+  content: string;
+  created_at: string;
 }
 
 export interface UploadJobFile {
@@ -94,6 +110,18 @@ export interface UploadStatusResponse {
 
 export interface UploadStatusStreamEvent extends UploadStatusResponse {
   type: "status";
+}
+
+export interface CreateChatResponse {
+  chat_id: string;
+}
+
+export interface ListChatsResponse {
+  chats: ChatSummary[];
+}
+
+export interface ChatMessagesResponse {
+  messages: StoredMessage[];
 }
 
 export interface ClearContextResponse {

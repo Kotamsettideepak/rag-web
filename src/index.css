@@ -40,6 +40,34 @@ button {
   padding: 20px;
 }
 
+.auth-card {
+  width: min(100%, 520px);
+  margin: 10vh auto 0;
+  padding: 32px;
+  border: 1px solid #e7e5e4;
+  border-radius: 24px;
+  background: linear-gradient(135deg, #ffffff, #fafaf9);
+}
+
+.auth-card h1,
+.auth-card p {
+  margin: 0;
+}
+
+.auth-card p {
+  margin-top: 10px;
+  color: #57534e;
+}
+
+.auth-button {
+  margin-top: 18px;
+}
+
+.google-button-slot {
+  margin-top: 18px;
+  min-height: 44px;
+}
+
 .chat-layout {
   height: calc(100vh - 40px);
   max-width: 980px;
@@ -51,6 +79,104 @@ button {
   background: #ffffff;
   border: 1px solid #e7e5e4;
   border-radius: 24px;
+}
+
+.chat-layout.with-sidebar {
+  max-width: 1240px;
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  align-items: stretch;
+}
+
+.chat-sidebar {
+  border: 1px solid #e7e5e4;
+  border-radius: 18px;
+  background: #ffffff;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+.chat-sidebar-top {
+  display: flex;
+}
+
+.sidebar-user-card {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #e7e5e4;
+  border-radius: 14px;
+  background: #fafaf9;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.sidebar-user-meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-user-meta strong,
+.sidebar-user-meta span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-user-meta span {
+  font-size: 0.82rem;
+  color: #78716c;
+}
+
+.sidebar-logout {
+  min-height: 36px;
+  padding: 0 12px;
+}
+
+.sidebar-button {
+  width: 100%;
+}
+
+.chat-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+}
+
+.chat-history-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid #e7e5e4;
+  background: #fafaf9;
+  color: #1f2937;
+  cursor: pointer;
+}
+
+.chat-history-item.active {
+  background: #eff6ff;
+  border-color: #93c5fd;
+}
+
+.chat-history-item span {
+  font-size: 0.82rem;
+  color: #78716c;
+}
+
+.chat-main {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .workspace-header,
@@ -460,6 +586,10 @@ button {
     height: calc(100vh - 24px);
     padding: 14px;
     border-radius: 18px;
+  }
+
+  .chat-layout.with-sidebar {
+    grid-template-columns: 1fr;
   }
 
   .workspace-header,

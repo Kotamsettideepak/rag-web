@@ -1,7 +1,12 @@
+import { AuthProvider } from "./auth/googleAuth";
 import { ChatWorkspacePage } from './pages/ChatWorkspacePage'
 
 function App() {
-  return <ChatWorkspacePage />
+  return (
+    <AuthProvider>
+      <ChatWorkspacePage />
+    </AuthProvider>
+  )
 }
 
 export default App
