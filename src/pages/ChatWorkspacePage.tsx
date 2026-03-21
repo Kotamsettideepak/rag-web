@@ -52,26 +52,36 @@ function createPendingAssistantMessage(copy = ""): ChatMessage {
 }
 
 function buildStatusText(
-  status: Pick<UploadStatusResponse, "status" | "stage" | "error"> | null,
+  status: Pick<UploadStatusResponse, "status" | "stage" | "error" | "summary"> | null,
   fallback: string,
 ) {
   if (!status) {
     return fallback;
   }
 
+  if (status.summary?.trim()) {
+    return status.summary;
+  }
+
   switch (status.stage) {
     case "queued":
-      return "Queued for processing...";
+      return "Queued. Waiting to start processing.";
+    case "processing":
+      return "Preparing your files for AI processing.";
+    case "extracting":
+      return "Extracting data from your files.";
     case "downloading":
-      return "Downloading video...";
+      return "Downloading and preparing the video audio.";
     case "transcribing":
-      return "Extracting audio and transcribing...";
+      return "Transcribing audio into searchable text.";
     case "chunking":
-      return "Chunking extracted content...";
+      return "Normalizing and organizing the extracted content.";
     case "embedding":
-      return "Embedding content and saving to the vector database...";
+      return "Creating embeddings for semantic search.";
+    case "storing":
+      return "Saving everything to the vector database.";
     case "completed":
-      return "Files are ready to chat.";
+      return "Your files are ready. You can start chatting now.";
     case "failed":
       return status.error || "Processing failed.";
     default:
@@ -83,10 +93,10 @@ function buildStatusText(
   }
 
   if (status.status === "completed") {
-    return "Files are ready to chat.";
+    return "Your files are ready. You can start chatting now.";
   }
 
-  return "Processing files...";
+  return "Processing your files.";
 }
 
 export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
@@ -651,7 +661,7 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
 
     const socket = createUploadStatusSocket(nextJobId, {
       onOpen: () => {
-        setFeedback("Processing files...");
+        setFeedback("Connecting to live processing updates...");
       },
       onMessage: handleUploadSocketMessage,
       onClose: () => {
@@ -823,7 +833,7 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
                 </strong>
                 <span>
                   {isProcessing
-                    ? "We are extracting text, creating embeddings, and saving everything to the vector database."
+                    ? feedback || "We are extracting data, organizing it, creating embeddings, and saving it to the database."
                     : "Once processing finishes, the chat input will appear here."}
                 </span>
               </div>
