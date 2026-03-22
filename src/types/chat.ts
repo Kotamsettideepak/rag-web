@@ -65,6 +65,15 @@ export interface StoredMessage {
   created_at: string;
 }
 
+export interface SavedUpload {
+  id: string;
+  chat_id: string;
+  file_url: string;
+  file_type: string;
+  original_file_name: string;
+  created_at: string;
+}
+
 export interface UploadJobFile {
   file_id: string;
   file_name: string;
@@ -124,6 +133,14 @@ export interface ChatMessagesResponse {
   messages: StoredMessage[];
 }
 
+export interface ChatUploadsResponse {
+  uploads: SavedUpload[];
+}
+
 export interface ClearContextResponse {
+  message: string;
+}
+
+export interface DeleteChatResponse {
   message: string;
 }

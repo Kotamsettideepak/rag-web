@@ -291,6 +291,10 @@ button {
   color: #292524;
 }
 
+.file-pill-link {
+  text-decoration: none;
+}
+
 .status-pill {
   font-size: 0.82rem;
   font-weight: 700;
@@ -487,6 +491,12 @@ button {
   border-color: #d6d3d1;
 }
 
+.danger-button {
+  color: #991b1b;
+  border-color: #fecaca;
+  background: #fff7f7;
+}
+
 .primary-button:disabled,
 .secondary-button:disabled,
 .send-button:disabled,
@@ -550,6 +560,77 @@ button {
   font-size: 0.93rem;
 }
 
+.welcome-hero {
+  min-height: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+  gap: 18px;
+  padding: 12px 0;
+}
+
+.welcome-copy,
+.welcome-panel,
+.welcome-card {
+  border: 1px solid #e7e5e4;
+  border-radius: 22px;
+  background: #ffffff;
+}
+
+.welcome-copy {
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 16px;
+  background: radial-gradient(circle at top left, #f8fbff, #ffffff 45%);
+}
+
+.welcome-copy h1,
+.welcome-copy p,
+.welcome-tagline {
+  margin: 0;
+}
+
+.welcome-copy h1 {
+  font-size: clamp(2rem, 3vw, 3.1rem);
+  line-height: 1.05;
+}
+
+.welcome-copy p {
+  max-width: 560px;
+  color: #57534e;
+  font-size: 1.02rem;
+}
+
+.welcome-tagline {
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
+.welcome-button {
+  width: fit-content;
+}
+
+.welcome-panel {
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  justify-content: center;
+}
+
+.welcome-card {
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: linear-gradient(180deg, #ffffff, #fafaf9);
+}
+
+.welcome-card span {
+  color: #57534e;
+}
+
 @keyframes processingPulse {
   0%,
   80%,
@@ -589,6 +670,10 @@ button {
   }
 
   .chat-layout.with-sidebar {
+    grid-template-columns: 1fr;
+  }
+
+  .welcome-hero {
     grid-template-columns: 1fr;
   }
 

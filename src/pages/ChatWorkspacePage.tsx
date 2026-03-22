@@ -3,11 +3,12 @@ import { useAuth } from "../auth/googleAuth";
 import { Composer } from "../components/ui/Composer";
 import { MessageList } from "../components/ui/MessageList";
 import {
-  clearContext,
   createChat,
   createChatSocket,
   createUploadStatusSocket,
+  deleteChat,
   getChatMessages,
+  getChatUploads,
   listChats,
   sendVoiceChat,
   uploadFiles,
@@ -18,6 +19,7 @@ import type {
   ChatStreamEvent,
   ChatSummary,
   JobStatus,
+  SavedUpload,
   StoredMessage,
   UploadedAsset,
   UploadStatusResponse,
@@ -110,6 +112,7 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
   const [chats, setChats] = useState<ChatSummary[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [uploads, setUploads] = useState<UploadedAsset[]>([]);
+  const [savedUploads, setSavedUploads] = useState<SavedUpload[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -151,6 +154,7 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
       setChats([]);
       setActiveChatId(null);
       setUploads([]);
+      setSavedUploads([]);
       setMessages([]);
       setFeedback("");
       setJobStatus(null);
@@ -201,17 +205,23 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
   async function selectChat(chatId: string, availableChats = chats) {
     setActiveChatId(chatId);
     setUploads([]);
+    setSavedUploads([]);
     setRemoteSourceLabel("");
     setYouTubeUrl("");
     setJobStatus("completed");
 
     try {
-      const response = await getChatMessages(chatId);
-      setMessages(response.messages.map(mapStoredMessage));
+      const [messageResponse, uploadResponse] = await Promise.all([
+        getChatMessages(chatId),
+        getChatUploads(chatId),
+      ]);
+      setMessages(messageResponse.messages.map(mapStoredMessage));
+      setSavedUploads(uploadResponse.uploads);
       const activeChat = availableChats.find((chat) => chat.id === chatId);
       setFeedback(activeChat ? `Switched to "${activeChat.title}".` : "Chat loaded.");
     } catch (error) {
       setMessages([]);
+      setSavedUploads([]);
       setFeedback(error instanceof Error ? error.message : "Failed to load messages.");
     }
   }
@@ -269,24 +279,42 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
     }
   }
 
-  async function clearWorkspace() {
-    if (isSubmitting || isSending) {
+  async function handleDeleteChat() {
+    if (isSubmitting || isSending || !activeChatId) {
+      return;
+    }
+
+    const activeChat = chats.find((chat) => chat.id === activeChatId);
+    const confirmed = window.confirm(
+      `Delete "${activeChat?.title || "this chat"}"? This will remove its messages, uploaded files, and vector context.`,
+    );
+    if (!confirmed) {
       return;
     }
 
     setIsSubmitting(true);
-    setFeedback("Clearing saved context...");
+    setFeedback("Deleting chat...");
 
     try {
-      const response = await clearContext();
+      const response = await deleteChat(activeChatId);
+      const remainingChats = chats.filter((chat) => chat.id !== activeChatId);
+      setChats(remainingChats);
       setMessages([]);
       setUploads([]);
+      setSavedUploads([]);
       setRemoteSourceLabel("");
-      setJobStatus(activeChatId ? "completed" : null);
+      setDraft("");
+      setYouTubeUrl("");
+      setJobStatus(null);
       setFeedback(response.message);
+
+      const nextChatId = remainingChats[0]?.id || null;
+      setActiveChatId(nextChatId);
+      if (nextChatId) {
+        await selectChat(nextChatId, remainingChats);
+      }
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to clear saved context.";
+      const message = error instanceof Error ? error.message : "Failed to delete chat.";
       setFeedback(message);
     } finally {
       setIsSubmitting(false);
@@ -737,6 +765,11 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
       setUploads((current) =>
         current.map((upload) => ({ ...upload, status: "ready" })),
       );
+      if (activeChatId) {
+        void getChatUploads(activeChatId)
+          .then((response) => setSavedUploads(response.uploads))
+          .catch(() => {});
+      }
       return;
     }
 
@@ -817,121 +850,162 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
         </aside>
 
         <div className="chat-main">
-          <header className="workspace-header">
-            <div>
-              <p className="workspace-label">RAG-AI</p>
-              <h1>{activeChatId ? "Multi-chat RAG workspace" : "Create a chat to begin"}</h1>
-            </div>
+          {activeChatId ? (
+            <>
+              <header className="workspace-header">
+                <div>
+                  <p className="workspace-label">RAG-AI</p>
+                  <h1>Multi-chat RAG workspace</h1>
+                </div>
 
-            <div className="workspace-actions">
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={openFilePicker}
-                disabled={isSubmitting || isSending || !activeChatId}
-              >
-                {uploads.length > 0 ? "Replace files" : "Choose files"}
-              </button>
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={() => void clearWorkspace()}
-                disabled={(!hasSource && messages.length === 0) || isSubmitting || isSending}
-              >
-                Clear
-              </button>
-              <button
-                type="button"
-                className="primary-button"
-                onClick={() => void handleUploadSubmit()}
-                disabled={
-                  uploads.length === 0 || isSubmitting || isSending || isProcessing || !activeChatId
-                }
-              >
-                {isSubmitting ? "Submitting..." : isProcessing ? "Processing..." : "Submit"}
-              </button>
-            </div>
-          </header>
+                <div className="workspace-actions">
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={openFilePicker}
+                    disabled={isSubmitting || isSending}
+                  >
+                    {uploads.length > 0 ? "Replace files" : "Choose files"}
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-button danger-button"
+                    onClick={() => void handleDeleteChat()}
+                    disabled={isSubmitting || isSending}
+                  >
+                    Delete
+                  </button>
+                  <button
+                    type="button"
+                    className="primary-button"
+                    onClick={() => void handleUploadSubmit()}
+                    disabled={uploads.length === 0 || isSubmitting || isSending || isProcessing}
+                  >
+                    {isSubmitting ? "Submitting..." : isProcessing ? "Processing..." : "Submit"}
+                  </button>
+                </div>
+              </header>
 
-          <section className="youtube-input-row">
-            <input
-              type="url"
-              className="youtube-input"
-              placeholder="Paste a YouTube link"
-              value={youtubeUrl}
-              onChange={(event) => setYouTubeUrl(event.target.value)}
-              disabled={isSubmitting || isSending || isProcessing || !activeChatId}
-            />
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={() => void handleYouTubeSubmit()}
-              disabled={!youtubeUrl.trim() || isSubmitting || isSending || isProcessing || !activeChatId}
-            >
-              {isSubmitting && remoteSourceLabel ? "Processing..." : "Process Video"}
-            </button>
-          </section>
+              <section className="youtube-input-row">
+                <input
+                  type="url"
+                  className="youtube-input"
+                  placeholder="Paste a YouTube link"
+                  value={youtubeUrl}
+                  onChange={(event) => setYouTubeUrl(event.target.value)}
+                  disabled={isSubmitting || isSending || isProcessing}
+                />
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => void handleYouTubeSubmit()}
+                  disabled={!youtubeUrl.trim() || isSubmitting || isSending || isProcessing}
+                >
+                  {isSubmitting && remoteSourceLabel ? "Processing..." : "Process Video"}
+                </button>
+              </section>
 
-          <section className="uploaded-files-bar">
-            <div className="uploaded-files-top">
-              <div className="uploaded-files-title">
-                {isChatReady ? "Chat context files" : "Selected files"}
+              <section className="uploaded-files-bar">
+                <div className="uploaded-files-top">
+                  <div className="uploaded-files-title">
+                    {isChatReady ? "Chat context files" : "Selected files"}
+                  </div>
+                  {jobStatus ? (
+                    <span className={`status-pill ${jobStatus}`}>{jobStatus}</span>
+                  ) : null}
+                </div>
+
+                {uploads.length > 0 ? (
+                  <div className="uploaded-file-list">
+                    {uploads.map((upload) => (
+                      <span key={upload.id} className="file-pill">
+                        {upload.name}
+                      </span>
+                    ))}
+                  </div>
+                ) : remoteSourceLabel ? (
+                  <div className="uploaded-file-list">
+                    <span className="file-pill">{remoteSourceLabel}</span>
+                  </div>
+                ) : savedUploads.length > 0 ? (
+                  <div className="uploaded-file-list">
+                    {savedUploads.map((upload) => (
+                      <a
+                        key={upload.id}
+                        className="file-pill file-pill-link"
+                        href={upload.file_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        title={upload.original_file_name || upload.file_url}
+                      >
+                        {upload.original_file_name || upload.file_type}
+                      </a>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="uploaded-files-empty">No new files selected for this chat.</p>
+                )}
+              </section>
+
+              {feedback ? <p className="status-text">{feedback}</p> : null}
+
+              <section className="chat-panel">
+                <div className="chat-scroll" ref={conversationRef}>
+                  <MessageList
+                    messages={messages}
+                    hasUploads={hasSource || messages.length > 0}
+                    isReady={!!activeChatId}
+                    isProcessing={isProcessing}
+                  />
+                </div>
+
+                <Composer
+                  value={draft}
+                  isSending={isSending}
+                  isDisabled={isProcessing}
+                  isRecording={isRecording}
+                  onChange={setDraft}
+                  onSubmit={() => void handleChatSubmit()}
+                  onVoiceToggle={() => void handleVoiceToggle()}
+                />
+              </section>
+            </>
+          ) : (
+            <section className="welcome-hero">
+              <div className="welcome-copy">
+                <p className="workspace-label">RAG-AI</p>
+                <h1>Welcome to RAG-AI</h1>
+                <p>
+                  Upload PDFs, audio, video, images, or YouTube links into dedicated chat spaces
+                  and get grounded answers from your own content.
+                </p>
+                <div className="welcome-tagline">Search less. Understand faster. Stay inside your context.</div>
+                <button
+                  type="button"
+                  className="primary-button welcome-button"
+                  onClick={() => void handleCreateChat()}
+                  disabled={isSubmitting || isSending}
+                >
+                  Start a New Chat
+                </button>
               </div>
-              {jobStatus ? (
-                <span className={`status-pill ${jobStatus}`}>{jobStatus}</span>
-              ) : null}
-            </div>
 
-            {uploads.length > 0 ? (
-              <div className="uploaded-file-list">
-                {uploads.map((upload) => (
-                  <span key={upload.id} className="file-pill">
-                    {upload.name}
-                  </span>
-                ))}
-              </div>
-            ) : remoteSourceLabel ? (
-              <div className="uploaded-file-list">
-                <span className="file-pill">{remoteSourceLabel}</span>
-              </div>
-            ) : (
-              <p className="uploaded-files-empty">
-                {activeChatId ? "No new files selected for this chat." : "Create a chat first."}
-              </p>
-            )}
-          </section>
-
-          {feedback ? <p className="status-text">{feedback}</p> : null}
-
-          <section className="chat-panel">
-            <div className="chat-scroll" ref={conversationRef}>
-              <MessageList
-                messages={messages}
-                hasUploads={hasSource || messages.length > 0}
-                isReady={!!activeChatId}
-                isProcessing={isProcessing}
-              />
-            </div>
-
-            {activeChatId ? (
-              <Composer
-                value={draft}
-                isSending={isSending}
-                isDisabled={!activeChatId || isProcessing}
-                isRecording={isRecording}
-                onChange={setDraft}
-                onSubmit={() => void handleChatSubmit()}
-                onVoiceToggle={() => void handleVoiceToggle()}
-              />
-            ) : (
-              <div className="processing-gate">
-                <div className="processing-copy">
-                  <strong>Create a chat to unlock uploads and messaging.</strong>
-                  <span>Each chat keeps its own files, messages, and retrieval context.</span>
+              <div className="welcome-panel">
+                <div className="welcome-card">
+                  <strong>Chat-based context</strong>
+                  <span>Each chat keeps its own files, messages, and vector search boundaries.</span>
+                </div>
+                <div className="welcome-card">
+                  <strong>Multimodal input</strong>
+                  <span>Work with documents, audio, video, images, and YouTube content in one place.</span>
+                </div>
+                <div className="welcome-card">
+                  <strong>Grounded answers</strong>
+                  <span>Responses combine recent chat history with retrieved chunks from your uploaded data.</span>
                 </div>
               </div>
-            )}
-          </section>
+            </section>
+          )}
 
           <input
             ref={fileInputRef}

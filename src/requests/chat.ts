@@ -2,9 +2,11 @@ import type {
   AskQuestionRequest,
   AskQuestionResponse,
   ChatMessagesResponse,
+  ChatUploadsResponse,
   ChatStreamEvent,
   ClearContextResponse,
   CreateChatResponse,
+  DeleteChatResponse,
   ListChatsResponse,
   VoiceChatResponse,
   UploadFilesResponse,
@@ -57,6 +59,26 @@ export async function getChatMessages(chatId: string): Promise<ChatMessagesRespo
   }
 
   return apiRequest<ChatMessagesResponse>(`/chat/${chatId}/messages`);
+}
+
+export async function getChatUploads(chatId: string): Promise<ChatUploadsResponse> {
+  if (USE_MOCKS) {
+    await delay(200);
+    return { uploads: [] };
+  }
+
+  return apiRequest<ChatUploadsResponse>(`/chat/${chatId}/uploads`);
+}
+
+export async function deleteChat(chatId: string): Promise<DeleteChatResponse> {
+  if (USE_MOCKS) {
+    await delay(200);
+    return { message: "Chat deleted successfully" };
+  }
+
+  return apiRequest<DeleteChatResponse>(`/chat/${chatId}`, {
+    method: "DELETE",
+  });
 }
 
 export async function uploadFiles(files: File[], chatId: string): Promise<UploadFilesResponse> {
