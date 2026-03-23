@@ -179,6 +179,7 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
   const conversationRef = useRef<HTMLDivElement | null>(null);
   const chatSocketRef = useRef<WebSocket | null>(null);
   const uploadSocketRef = useRef<WebSocket | null>(null);
+  const uploadCompletionTimerRef = useRef<number | null>(null);
   const activeAssistantMessageIdRef = useRef<string | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
@@ -234,6 +235,9 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
 
   useEffect(() => {
     return () => {
+      if (uploadCompletionTimerRef.current) {
+        window.clearTimeout(uploadCompletionTimerRef.current);
+      }
       stopVoiceCapture();
       stopPlaybackAudio();
       voiceAbortRef.current?.abort();
@@ -797,6 +801,10 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
   }
 
   function connectUploadStatusSocket(nextJobId: string) {
+    if (uploadCompletionTimerRef.current) {
+      window.clearTimeout(uploadCompletionTimerRef.current);
+      uploadCompletionTimerRef.current = null;
+    }
     uploadSocketRef.current?.close();
 
     const socket = createUploadStatusSocket(nextJobId, {
@@ -821,6 +829,11 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
   }
 
   function handleUploadSocketMessage(event: UploadStatusStreamEvent) {
+    if (uploadCompletionTimerRef.current) {
+      window.clearTimeout(uploadCompletionTimerRef.current);
+      uploadCompletionTimerRef.current = null;
+    }
+
     setJobStatus(event.status);
     setJobSnapshot(event);
     setFeedback(buildStatusText(event, "Processing upload..."));
@@ -835,6 +848,10 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
           .then((response) => setSavedUploads(response.uploads))
           .catch(() => {});
       }
+      uploadCompletionTimerRef.current = window.setTimeout(() => {
+        setJobSnapshot(null);
+        uploadCompletionTimerRef.current = null;
+      }, 1800);
       return;
     }
 
@@ -1052,26 +1069,30 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
 
               {feedback ? <p className="status-text">{feedback}</p> : null}
 
-              <section className="chat-panel">
-                <div className="chat-scroll" ref={conversationRef}>
-                  <MessageList
-                    messages={messages}
-                    hasUploads={hasSource || messages.length > 0}
-                    isReady={!!activeChatId}
-                    isProcessing={isProcessing}
-                  />
-                </div>
+              {!isProcessing ? (
+                <section className="chat-panel">
+                  <>
+                    <div className="chat-scroll" ref={conversationRef}>
+                      <MessageList
+                        messages={messages}
+                        hasUploads={hasSource || messages.length > 0}
+                        isReady={!!activeChatId}
+                        isProcessing={isProcessing}
+                      />
+                    </div>
 
-                <Composer
-                  value={draft}
-                  isSending={isSending}
-                  isDisabled={isProcessing}
-                  isRecording={isRecording}
-                  onChange={setDraft}
-                  onSubmit={() => void handleChatSubmit()}
-                  onVoiceToggle={() => void handleVoiceToggle()}
-                />
-              </section>
+                    <Composer
+                      value={draft}
+                      isSending={isSending}
+                      isDisabled={isProcessing}
+                      isRecording={isRecording}
+                      onChange={setDraft}
+                      onSubmit={() => void handleChatSubmit()}
+                      onVoiceToggle={() => void handleVoiceToggle()}
+                    />
+                  </>
+                </section>
+              ) : null}
             </>
           ) : (
             <section className="welcome-hero">
