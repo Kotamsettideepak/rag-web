@@ -15,7 +15,7 @@ function labelForRole(role: ChatMessage["role"]) {
 
 function emptyTitle(hasUploads: boolean, isReady: boolean, isProcessing: boolean) {
   if (!hasUploads) {
-    return "Choose files to begin.";
+    return "This chat is waiting for context.";
   }
 
   if (isProcessing) {
@@ -31,7 +31,7 @@ function emptyTitle(hasUploads: boolean, isReady: boolean, isProcessing: boolean
 
 function emptyCopy(hasUploads: boolean, isReady: boolean, isProcessing: boolean) {
   if (!hasUploads) {
-    return "After submit, the app will process files in the background and keep only the filenames visible.";
+    return "Choose a file from the right sidebar to upload documents, images, audio, or video into this chat.";
   }
 
   if (isProcessing) {

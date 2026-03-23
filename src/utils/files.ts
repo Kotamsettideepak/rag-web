@@ -30,6 +30,56 @@ export function inferAttachmentKind(file: File): AttachmentKind {
   return 'unknown'
 }
 
+export function inferSavedAttachmentKind(
+  fileType: string,
+  fileName: string,
+  fileUrl: string,
+): AttachmentKind {
+  const normalizedType = fileType.toLowerCase()
+  const normalizedName = fileName.toLowerCase()
+  const normalizedUrl = fileUrl.toLowerCase()
+
+  if (
+    normalizedType.includes('pdf') ||
+    pdfExtensions.some((extension) => normalizedName.endsWith(extension) || normalizedUrl.includes(extension))
+  ) {
+    return 'pdf'
+  }
+
+  if (
+    normalizedType.startsWith('image/') ||
+    normalizedType === 'image' ||
+    ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg'].some((extension) =>
+      normalizedName.endsWith(extension) || normalizedUrl.includes(extension),
+    )
+  ) {
+    return 'image'
+  }
+
+  if (
+    normalizedType.startsWith('video/') ||
+    normalizedType === 'video' ||
+    ['.mp4', '.webm', '.mov', '.mkv', '.avi'].some((extension) =>
+      normalizedName.endsWith(extension) || normalizedUrl.includes(extension),
+    )
+  ) {
+    return 'video'
+  }
+
+  if (
+    normalizedType.startsWith('audio/') ||
+    normalizedType === 'audio' ||
+    normalizedType === 'youtube' ||
+    ['.mp3', '.wav', '.ogg', '.m4a', '.aac'].some((extension) =>
+      normalizedName.endsWith(extension) || normalizedUrl.includes(extension),
+    )
+  ) {
+    return 'audio'
+  }
+
+  return 'unknown'
+}
+
 export function formatFileSize(size: number): string {
   if (size < 1024) {
     return `${size} B`

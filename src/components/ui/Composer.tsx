@@ -30,6 +30,15 @@ export const Composer = memo(function Composer({
 
   return (
     <form className="composer" onSubmit={handleSubmit}>
+      <button
+        type="button"
+        className="send-button"
+        disabled={isDisabled}
+        onClick={onVoiceToggle}
+      >
+        {isRecording ? "Listening..." : "Speak"}
+      </button>
+
       <input
         className="composer-input"
         type="text"
@@ -44,20 +53,30 @@ export const Composer = memo(function Composer({
       />
 
       <button
-        type="button"
-        className="send-button"
-        disabled={isDisabled}
-        onClick={onVoiceToggle}
-      >
-        {isRecording ? "Listening..." : "Speak"}
-      </button>
-
-      <button
         type="submit"
         className="send-button"
+        aria-label={isSending ? "Sending message" : "Send message"}
+        title={isSending ? "Sending message" : "Send message"}
         disabled={isDisabled || isSending || value.trim().length === 0}
       >
-        {isSending ? "Thinking..." : "Send"}
+        {isSending ? (
+          "..."
+        ) : (
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M22 2 11 13" />
+            <path d="M22 2 15 22 11 13 2 9 22 2z" />
+          </svg>
+        )}
       </button>
     </form>
   );
