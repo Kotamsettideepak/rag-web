@@ -97,6 +97,11 @@ export interface UploadFilesResponse {
   stage?: string;
   message: string;
   summary?: string;
+  detail?: string;
+  current_file?: string;
+  current_kind?: string;
+  progress_label?: string;
+  progress_percent?: number;
   files: UploadJobFile[];
   metrics: JobMetrics;
   accepted: boolean;
@@ -113,6 +118,11 @@ export interface UploadStatusResponse {
   file_count: number;
   files: UploadJobFile[];
   summary?: string;
+  detail?: string;
+  current_file?: string;
+  current_kind?: string;
+  progress_label?: string;
+  progress_percent?: number;
   error?: string;
   metrics: JobMetrics;
 }

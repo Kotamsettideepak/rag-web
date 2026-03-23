@@ -560,6 +560,70 @@ button {
   font-size: 0.93rem;
 }
 
+.processing-progress {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.processing-progress-bar {
+  flex: 1;
+  height: 10px;
+  border-radius: 999px;
+  background: #e7e5e4;
+  overflow: hidden;
+}
+
+.processing-progress-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #2563eb, #60a5fa);
+}
+
+.processing-file-list {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.processing-file-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid #e7e5e4;
+}
+
+.processing-file-status {
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.processing-file-status.queued {
+  color: #92400e;
+}
+
+.processing-file-status.processing,
+.processing-file-status.parsed,
+.processing-file-status.chunked {
+  color: #1d4ed8;
+}
+
+.processing-file-status.completed {
+  color: #166534;
+}
+
+.processing-file-status.failed {
+  color: #b91c1c;
+}
+
 .welcome-hero {
   min-height: 100%;
   display: grid;

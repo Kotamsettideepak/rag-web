@@ -22,6 +22,7 @@ import type {
   SavedUpload,
   StoredMessage,
   UploadedAsset,
+  UploadFilesResponse,
   UploadStatusResponse,
   UploadStatusStreamEvent,
 } from "../types/chat";
@@ -70,11 +71,15 @@ function mapStoredMessage(message: StoredMessage): ChatMessage {
 }
 
 function buildStatusText(
-  status: Pick<UploadStatusResponse, "status" | "stage" | "error" | "summary"> | null,
+  status: Pick<UploadStatusResponse, "status" | "stage" | "error" | "summary" | "detail"> | null,
   fallback: string,
 ) {
   if (!status) {
     return fallback;
+  }
+
+  if (status.detail?.trim()) {
+    return status.detail;
   }
 
   if (status.summary?.trim()) {
@@ -107,6 +112,53 @@ function buildStatusText(
   }
 }
 
+function formatStageTitle(stage?: string) {
+  switch (stage) {
+    case "queued":
+      return "Queued";
+    case "processing":
+      return "Preparing";
+    case "extracting":
+      return "Extracting";
+    case "downloading":
+      return "Downloading Video";
+    case "transcribing":
+      return "Transcribing Audio";
+    case "chunking":
+      return "Building Chunks";
+    case "embedding":
+      return "Generating Embeddings";
+    case "storing":
+      return "Saving to Vector DB";
+    case "completed":
+      return "Completed";
+    case "failed":
+      return "Failed";
+    default:
+      return "Processing";
+  }
+}
+
+function toInitialJobSnapshot(response: UploadFilesResponse): UploadStatusResponse {
+  const now = new Date().toISOString();
+  return {
+    job_id: response.job_id,
+    status: response.status,
+    stage: response.stage,
+    created_at: now,
+    updated_at: now,
+    file_count: response.files.length,
+    files: response.files,
+    summary: response.summary ?? response.message,
+    detail: response.detail,
+    current_file: response.current_file,
+    current_kind: response.current_kind,
+    progress_label: response.progress_label,
+    progress_percent: response.progress_percent,
+    metrics: response.metrics,
+  };
+}
+
 export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
   const { user, isReady, isAuthenticated, googleClientId, renderGoogleButton, signOut } = useAuth();
   const [chats, setChats] = useState<ChatSummary[]>([]);
@@ -119,6 +171,7 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
   const [isSending, setIsSending] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [jobStatus, setJobStatus] = useState<JobStatus | null>(null);
+  const [jobSnapshot, setJobSnapshot] = useState<UploadStatusResponse | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [youtubeUrl, setYouTubeUrl] = useState("");
   const [remoteSourceLabel, setRemoteSourceLabel] = useState("");
@@ -158,6 +211,7 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
       setMessages([]);
       setFeedback("");
       setJobStatus(null);
+      setJobSnapshot(null);
       setRemoteSourceLabel("");
       setYouTubeUrl("");
     }
@@ -209,6 +263,7 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
     setRemoteSourceLabel("");
     setYouTubeUrl("");
     setJobStatus("completed");
+    setJobSnapshot(null);
 
     try {
       const [messageResponse, uploadResponse] = await Promise.all([
@@ -222,6 +277,7 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
     } catch (error) {
       setMessages([]);
       setSavedUploads([]);
+      setJobSnapshot(null);
       setFeedback(error instanceof Error ? error.message : "Failed to load messages.");
     }
   }
@@ -306,6 +362,7 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
       setDraft("");
       setYouTubeUrl("");
       setJobStatus(null);
+      setJobSnapshot(null);
       setFeedback(response.message);
 
       const nextChatId = remainingChats[0]?.id || null;
@@ -328,6 +385,7 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
 
     setIsSubmitting(true);
     setJobStatus("queued");
+    setJobSnapshot(null);
     setFeedback("Uploading files...");
     setUploads((current) =>
       current.map((upload) => ({ ...upload, status: "uploading" })),
@@ -336,6 +394,7 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
     try {
       const response = await uploadFiles(uploads.map((upload) => upload.file), activeChatId);
       setJobStatus(response.status);
+      setJobSnapshot(toInitialJobSnapshot(response));
       setUploads((current) =>
         current.map((upload) => ({ ...upload, status: "processing" })),
       );
@@ -348,6 +407,7 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
         current.map((upload) => ({ ...upload, status: "failed" })),
       );
       setJobStatus("failed");
+      setJobSnapshot(null);
       setFeedback(message);
     } finally {
       setIsSubmitting(false);
@@ -363,18 +423,21 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
     setUploads([]);
     setRemoteSourceLabel(trimmedUrl);
     setJobStatus("queued");
+    setJobSnapshot(null);
     setIsSubmitting(true);
     setFeedback("Submitting YouTube link...");
 
     try {
       const response = await uploadYouTubeUrl(trimmedUrl, activeChatId);
       setJobStatus(response.status);
+      setJobSnapshot(toInitialJobSnapshot(response));
       setFeedback(buildStatusText(response, "Processing YouTube video..."));
       connectUploadStatusSocket(response.job_id);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "YouTube processing failed. Please try again.";
       setJobStatus("failed");
+      setJobSnapshot(null);
       setFeedback(message);
     } finally {
       setIsSubmitting(false);
@@ -747,6 +810,7 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
       onError: () => {
         setFeedback("Live upload status connection failed.");
         setJobStatus("failed");
+        setJobSnapshot(null);
         setUploads((current) =>
           current.map((upload) => ({ ...upload, status: "failed" })),
         );
@@ -758,6 +822,7 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
 
   function handleUploadSocketMessage(event: UploadStatusStreamEvent) {
     setJobStatus(event.status);
+    setJobSnapshot(event);
     setFeedback(buildStatusText(event, "Processing upload..."));
 
     if (event.status === "completed") {
@@ -946,6 +1011,44 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
                   <p className="uploaded-files-empty">No new files selected for this chat.</p>
                 )}
               </section>
+
+              {jobSnapshot ? (
+                <section className={`processing-gate ${jobSnapshot.status === "processing" ? "active" : ""}`}>
+                  <div className="processing-indicator" aria-hidden="true">
+                    <span />
+                    <span />
+                    <span />
+                  </div>
+                  <div className="processing-copy">
+                    <strong>{formatStageTitle(jobSnapshot.stage)}</strong>
+                    <span>{jobSnapshot.summary || "Processing your content."}</span>
+                    {jobSnapshot.detail ? <span>{jobSnapshot.detail}</span> : null}
+                    {jobSnapshot.current_file ? (
+                      <span>
+                        Working on: <strong>{jobSnapshot.current_file}</strong>
+                        {jobSnapshot.current_kind ? ` (${jobSnapshot.current_kind})` : ""}
+                      </span>
+                    ) : null}
+                    {jobSnapshot.progress_label ? <span>{jobSnapshot.progress_label}</span> : null}
+                    <div className="processing-progress">
+                      <div className="processing-progress-bar">
+                        <span style={{ width: `${jobSnapshot.progress_percent || 0}%` }} />
+                      </div>
+                      <strong>{jobSnapshot.progress_percent || 0}%</strong>
+                    </div>
+                    {jobSnapshot.files.length > 0 ? (
+                      <div className="processing-file-list">
+                        {jobSnapshot.files.map((file) => (
+                          <div key={file.file_id} className="processing-file-row">
+                            <span>{file.file_name}</span>
+                            <span className={`processing-file-status ${file.status}`}>{file.status}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                </section>
+              ) : null}
 
               {feedback ? <p className="status-text">{feedback}</p> : null}
 

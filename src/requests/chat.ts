@@ -95,6 +95,10 @@ export async function uploadFiles(files: File[], chatId: string): Promise<Upload
       status: "queued",
       stage: "queued",
       message: "Upload accepted. Processing in background.",
+      summary: "Upload accepted. Processing in background.",
+      detail: "Your files are queued and waiting for a worker to begin processing.",
+      progress_label: "Waiting to start",
+      progress_percent: 2,
       files: files.map((file) => ({
         file_id: crypto.randomUUID(),
         file_name: file.name,
@@ -150,6 +154,10 @@ export async function uploadYouTubeUrl(url: string, chatId: string): Promise<Upl
       status: "queued",
       stage: "queued",
       message: "YouTube link accepted. Processing in background.",
+      summary: "YouTube link accepted. Processing in background.",
+      detail: "Your YouTube link is queued and waiting for background processing.",
+      progress_label: "Waiting to start",
+      progress_percent: 2,
       files: [
         {
           file_id: crypto.randomUUID(),
@@ -184,7 +192,17 @@ export async function uploadYouTubeUrl(url: string, chatId: string): Promise<Upl
   });
 
   if (!response.ok) {
-    throw new Error(`YouTube processing failed (status ${response.status})`);
+    let message = `YouTube processing failed (status ${response.status})`;
+    try {
+      const payload = (await response.json()) as { error?: string };
+      const detail = payload?.error?.trim();
+      if (detail) {
+        message = detail;
+      }
+    } catch {
+      // Keep the fallback message when the backend body is not JSON.
+    }
+    throw new Error(message);
   }
 
   return (await response.json()) as UploadFilesResponse;
@@ -220,6 +238,11 @@ export async function getUploadStatus(jobId: string): Promise<UploadStatusRespon
       summary: isDone
         ? "Upload completed. The files are ready for chat."
         : "Background processing is running.",
+      detail: isDone
+        ? "Everything finished successfully and the content is ready for chat."
+        : "The backend is moving through extraction, chunking, embedding, and storage.",
+      progress_label: isDone ? "Ready for chat" : "Processing upload",
+      progress_percent: isDone ? 100 : Math.min(90, Math.floor(elapsed / 40)),
       metrics: {
         parse_duration_ms: isDone ? 900 : 0,
         chunk_duration_ms: isDone ? 220 : 0,
