@@ -45,23 +45,141 @@ button {
   padding: 0;
 }
 
-.auth-card {
-  width: min(100%, 520px);
-  margin: 10vh auto 0;
-  padding: 32px;
-  border: 1px solid #e7e5e4;
-  border-radius: 24px;
-  background: linear-gradient(135deg, #ffffff, #fafaf9);
+.auth-hero {
+  height: 100vh;
+  overflow: hidden;
+  padding: 20px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(360px, 0.85fr);
+  gap: 20px;
+  align-items: stretch;
+  background:
+    radial-gradient(circle at left center, rgba(191, 219, 254, 0.65), transparent 34%),
+    radial-gradient(circle at right top, rgba(254, 240, 138, 0.7), transparent 26%),
+    linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
 }
 
-.auth-card h1,
-.auth-card p {
+.auth-brand-panel,
+.auth-card {
+  padding: 28px;
+  border: 1px solid #e7e5e4;
+  border-radius: 30px;
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 26px 70px rgba(15, 23, 42, 0.08);
+}
+
+.auth-brand-panel {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 16px;
+  background:
+    radial-gradient(circle at top left, rgba(219, 234, 254, 0.85), transparent 30%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.92));
+}
+
+.auth-card {
+  width: min(100%, 520px);
+  justify-self: center;
+  display: flex;
+  flex-direction: column;
+}
+
+.auth-card-accent {
+  justify-content: center;
+  background:
+    radial-gradient(circle at top right, rgba(254, 240, 138, 0.28), transparent 24%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.94));
+}
+
+.auth-card h2,
+.auth-card p,
+.auth-brand-panel h1,
+.auth-brand-panel p,
+.auth-feature-card strong,
+.auth-feature-card span,
+.auth-stat-card strong,
+.auth-stat-card span,
+.auth-kicker {
   margin: 0;
 }
 
+.auth-kicker {
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #2563eb;
+}
+
+.auth-brand-panel h1,
+.auth-card h2 {
+  color: #0f172a;
+  line-height: 1.04;
+}
+
+.auth-brand-panel h1 {
+  max-width: 12ch;
+  font-size: clamp(2.2rem, 3.9vw, 3.7rem);
+}
+
+.auth-card h2 {
+  margin-top: 10px;
+  font-size: clamp(1.8rem, 2.7vw, 2.5rem);
+}
+
+.auth-card-accent .auth-kicker,
+.auth-card-accent h2,
+.auth-card-accent p {
+  text-align: center;
+}
+
+.auth-lead,
 .auth-card p {
   margin-top: 10px;
   color: #57534e;
+  font-size: 1rem;
+  line-height: 1.55;
+}
+
+.auth-feature-list,
+.auth-stat-row {
+  display: grid;
+  gap: 14px;
+}
+
+.auth-feature-list {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.auth-stat-row {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.auth-feature-card,
+.auth-stat-card {
+  padding: 16px;
+  border: 1px solid rgba(226, 232, 240, 0.95);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.88);
+}
+
+.auth-feature-card strong,
+.auth-stat-card strong {
+  display: block;
+  color: #0f172a;
+  font-size: 0.95rem;
+}
+
+.auth-feature-card span,
+.auth-stat-card span {
+  display: block;
+  margin-top: 6px;
+  color: #64748b;
+  line-height: 1.45;
+  font-size: 0.95rem;
 }
 
 .auth-button {
@@ -69,8 +187,10 @@ button {
 }
 
 .google-button-slot {
-  margin-top: 18px;
+  margin-top: 24px;
   min-height: 44px;
+  display: flex;
+  justify-content: center;
 }
 
 .chat-layout {
@@ -269,7 +389,6 @@ button {
 }
 
 .workspace-header,
-.uploaded-files-bar,
 .chat-panel,
 .composer,
 .message-bubble,
@@ -294,8 +413,6 @@ button {
 .workspace-header h1,
 .workspace-subtitle,
 .workspace-label,
-.uploaded-files-title,
-.uploaded-files-empty,
 .status-text,
 .empty-state-card h2,
 .empty-state-card p,
@@ -332,62 +449,6 @@ button {
   font-size: 1rem;
 }
 
-.workspace-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  flex-shrink: 0;
-}
-
-.source-studio.mini {
-  padding: 16px 24px;
-  background: #f9fafb;
-  border: 0;
-  border-bottom: 1px solid #e5e7eb;
-  border-radius: 0;
-  box-shadow: none;
-}
-
-.source-studio-top {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.source-studio-top h2 {
-  margin: 6px 0 0;
-  font-size: 1.4rem;
-  line-height: 1.15;
-}
-
-.source-studio-actions {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.source-empty {
-  padding: 16px 18px;
-  border: 1px dashed #cbd5e1;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.85);
-  flex-direction: column;
-}
-
-.source-empty strong,
-.source-empty span {
-  margin: 0;
-}
-
-.source-empty span {
-  color: #57534e;
-}
-
-.source-submit-row {
-  justify-content: flex-start;
-}
-
 .youtube-input {
   width: 100%;
   min-width: 0;
@@ -405,25 +466,6 @@ button {
   box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.18);
 }
 
-.uploaded-files-bar {
-  padding: 18px;
-}
-
-.uploaded-files-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.uploaded-files-title {
-  font-size: 13px;
-  font-weight: 700;
-  color: #475569;
-  letter-spacing: 0.02em;
-}
-
-.file-pill,
 .status-pill {
   display: inline-flex;
   align-items: center;
@@ -431,16 +473,6 @@ button {
   padding: 0 12px;
   border-radius: 999px;
   font-size: 0.95rem;
-}
-
-.file-pill {
-  background: linear-gradient(180deg, #f8fafc, #f1f5f9);
-  color: #1f2937;
-  border: 1px solid #e2e8f0;
-}
-
-.file-pill-link {
-  text-decoration: none;
 }
 
 .status-pill {
@@ -467,11 +499,6 @@ button {
 .status-pill.failed {
   background: #fee2e2;
   color: #b91c1c;
-}
-
-.uploaded-files-empty {
-  margin-top: 8px;
-  color: #78716c;
 }
 
 .status-text {
@@ -628,10 +655,6 @@ button {
   outline: none;
   background: transparent;
   font-size: 1rem;
-}
-
-.source-library {
-  min-height: 180px;
 }
 
 .asset-grid {
@@ -1228,6 +1251,33 @@ button {
     padding: 0;
   }
 
+  .auth-hero {
+    padding: 18px;
+    grid-template-columns: 1fr;
+    gap: 18px;
+    align-items: stretch;
+    overflow-y: auto;
+  }
+
+  .auth-brand-panel,
+  .auth-card {
+    padding: 24px;
+    border-radius: 24px;
+  }
+
+  .auth-brand-panel {
+    min-height: auto;
+  }
+
+  .auth-feature-list,
+  .auth-stat-row {
+    grid-template-columns: 1fr;
+  }
+
+  .auth-hero {
+    overflow-y: auto;
+  }
+
   .chat-layout {
     height: calc(100vh - 24px);
     padding: 14px;
@@ -1244,10 +1294,6 @@ button {
   }
 
   .workspace-header,
-  .source-studio-top,
-  .source-studio-actions,
-  .uploaded-files-top,
-  .workspace-actions,
   .youtube-input-row,
   .composer,
   .processing-gate {

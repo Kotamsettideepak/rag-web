@@ -134,7 +134,17 @@ export async function uploadFiles(files: File[], chatId: string): Promise<Upload
   });
 
   if (!response.ok) {
-    throw new Error(`Upload failed (status ${response.status})`);
+    let message = `Upload failed (status ${response.status})`;
+    try {
+      const payload = (await response.json()) as { error?: string };
+      const detail = payload?.error?.trim();
+      if (detail) {
+        message = detail;
+      }
+    } catch {
+      // Keep the fallback message when the backend body is not JSON.
+    }
+    throw new Error(message);
   }
 
   return (await response.json()) as UploadFilesResponse;

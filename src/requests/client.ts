@@ -1,9 +1,10 @@
 import { getStoredGoogleToken } from "../auth/googleAuth";
 
-const DEFAULT_API_BASE_URL = 'http://localhost:8080'
+export const apiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim() || ""
 
-export const apiBaseUrl =
-  import.meta.env.VITE_API_BASE_URL?.trim() || DEFAULT_API_BASE_URL
+if (!apiBaseUrl) {
+  throw new Error("VITE_API_BASE_URL is required")
+}
 
 export const websocketBaseUrl = apiBaseUrl.replace(/^http/i, 'ws')
 

@@ -272,6 +272,7 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
   const isProcessing = jobStatus === "queued" || jobStatus === "processing";
   const hasPendingUploads = uploads.length > 0;
   const hasStartedConversation = messages.length > 0;
+  const canAddSource = !hasStartedConversation || (jobStatus === "failed" && savedUploads.length === 0);
 
   useEffect(() => {
     document.title = "RAG-AI";
@@ -399,21 +400,28 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
     const sameKindFiles = selectedFiles.filter(
       (file) => inferAttachmentKind(file) === firstKind,
     );
+    const normalizedFiles =
+      firstKind === "pdf" && sameKindFiles.length > 1 ? sameKindFiles.slice(0, 1) : sameKindFiles;
     const skippedCount = selectedFiles.length - sameKindFiles.length;
 
-    setUploads(sameKindFiles.map(createAsset));
+    setUploads(normalizedFiles.map(createAsset));
     setYouTubeUrl("");
     setIsSourceModalOpen(false);
 
+    if (firstKind === "pdf" && sameKindFiles.length > 1) {
+      setFeedback("Only one PDF can be uploaded at a time. Kept the first PDF only.");
+      return;
+    }
+
     if (skippedCount > 0) {
       setFeedback(
-        `Kept ${sameKindFiles.length} ${firstKind} file${sameKindFiles.length === 1 ? "" : "s"} and skipped ${skippedCount} mismatched file${skippedCount === 1 ? "" : "s"}.`,
+        `Kept ${normalizedFiles.length} ${firstKind} file${normalizedFiles.length === 1 ? "" : "s"} and skipped ${skippedCount} mismatched file${skippedCount === 1 ? "" : "s"}.`,
       );
       return;
     }
 
     setFeedback(
-      `${sameKindFiles.length} file${sameKindFiles.length === 1 ? "" : "s"} selected for this chat.`,
+      `${normalizedFiles.length} file${normalizedFiles.length === 1 ? "" : "s"} selected for this chat.`,
     );
   }
 
@@ -980,21 +988,89 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
   return (
     <div className="app-shell">
       {!googleClientId ? (
-        <div className="auth-card">
-          <h1>Google login setup is incomplete</h1>
-          <p>Add `VITE_GOOGLE_CLIENT_ID` in the frontend env and `GOOGLE_CLIENT_ID` in the backend env.</p>
-        </div>
+        <section className="auth-hero">
+          <div className="auth-brand-panel">
+            <p className="auth-kicker">RAG-ai</p>
+            <h1>Configuration needed before sign-in</h1>
+            <p className="auth-lead">
+              RAG-ai keeps your chats, files, and retrieval context organized in one private workspace.
+            </p>
+            <div className="auth-feature-list">
+              <div className="auth-feature-card">
+                <strong>Private by chat</strong>
+                <span>Every conversation stays scoped to its own uploaded context.</span>
+              </div>
+              <div className="auth-feature-card">
+                <strong>Built for mixed media</strong>
+                <span>Work across PDFs, images, audio, video, and YouTube sources.</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="auth-card auth-card-accent">
+            <p className="auth-kicker">Setup</p>
+            <h2>Google login is not ready yet</h2>
+            <p>Add `VITE_GOOGLE_CLIENT_ID` in the frontend env and `GOOGLE_CLIENT_ID` in the backend env.</p>
+          </div>
+        </section>
       ) : !isReady ? (
-        <div className="auth-card">
-          <h1>Loading Google sign-in...</h1>
-          <p>Preparing secure login for your chats and uploaded context.</p>
-        </div>
+        <section className="auth-hero">
+          <div className="auth-brand-panel">
+            <p className="auth-kicker">RAG-ai</p>
+            <h1>Your multimodal knowledge workspace</h1>
+            <p className="auth-lead">
+              Ask better questions over your own documents and media with chat-specific retrieval.
+            </p>
+            <div className="auth-stat-row">
+              <div className="auth-stat-card">
+                <strong>Scoped retrieval</strong>
+                <span>Each chat uses only its own stored context.</span>
+              </div>
+              <div className="auth-stat-card">
+                <strong>One workspace</strong>
+                <span>Search, upload, and chat in one focused flow.</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="auth-card auth-card-accent">
+            <p className="auth-kicker">Loading</p>
+            <h2>Preparing secure sign-in</h2>
+            <p>Connecting Google authentication and getting RAG-ai ready for your workspace.</p>
+          </div>
+        </section>
       ) : !isAuthenticated ? (
-        <div className="auth-card">
-          <h1>Sign in to continue</h1>
-          <p>Your chats, files, and retrieval context are now isolated per Google account.</p>
-          <div ref={googleButtonRef} className="google-button-slot" />
-        </div>
+        <section className="auth-hero">
+          <div className="auth-brand-panel">
+            <p className="auth-kicker">RAG-ai</p>
+            <h1>Chat with your own knowledge, not the whole internet.</h1>
+            <p className="auth-lead">
+              Upload files, keep each conversation isolated, and explore answers grounded in your own content.
+            </p>
+
+            <div className="auth-feature-list">
+              <div className="auth-feature-card">
+                <strong>Context-aware chats</strong>
+                <span>Each chat keeps its own files, messages, and retrieval boundary.</span>
+              </div>
+              <div className="auth-feature-card">
+                <strong>Multimodal ingestion</strong>
+                <span>Use PDFs, images, audio, video, and YouTube links in one place.</span>
+              </div>
+              <div className="auth-feature-card">
+                <strong>Fast answers</strong>
+                <span>Get grounded responses from stored chunks instead of guessing.</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="auth-card auth-card-accent">
+            <p className="auth-kicker">Welcome</p>
+            <h2>Sign in to enter RAG-ai</h2>
+            <p>Your chats, files, and retrieval context are isolated per Google account.</p>
+            <div ref={googleButtonRef} className="google-button-slot" />
+          </div>
+        </section>
       ) : (
       <div className={`chat-layout with-sidebar ${!activeChatId ? "initial-state" : "active-chat"}`}>
         <aside className="chat-sidebar">
@@ -1135,7 +1211,7 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
           <aside className="chat-right">
             <header className="right-header">
               <p className="workspace-label">Files & Context</p>
-              {!hasStartedConversation ? (
+              {canAddSource ? (
                 <div className="right-actions">
                   <button
                     type="button"
@@ -1283,6 +1359,7 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
               {sourceModalMode === "files" ? (
                 <div className="source-modal-body">
                   <p>Select files from your system. Only one file format is accepted at a time, so a new selection replaces the previous staged format.</p>
+                  <p>PDF uploads are limited to 300 pages maximum, and only one PDF can be uploaded at a time.</p>
                   <button
                     type="button"
                     className="primary-button"
@@ -1295,6 +1372,7 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
               ) : (
                 <div className="source-modal-body">
                   <p>Paste one YouTube link. Uploading a YouTube source clears any staged files first.</p>
+                  <p>YouTube videos must be less than 1 hour long.</p>
                   <input
                     type="url"
                     className="youtube-input"

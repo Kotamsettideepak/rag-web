@@ -8,8 +8,8 @@ import {
 } from "react";
 
 const STORAGE_KEY = "rag_google_id_token";
-const GOOGLE_SCRIPT_SRC = "https://accounts.google.com/gsi/client";
 const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID?.trim() || "";
+const googleScriptSrc = import.meta.env.VITE_GOOGLE_SCRIPT_SRC?.trim() || "";
 
 function maskClientID(value: string) {
   if (!value) {
@@ -94,7 +94,7 @@ function loadGoogleScript(): Promise<void> {
   }
 
   const existing = document.querySelector<HTMLScriptElement>(
-    `script[src="${GOOGLE_SCRIPT_SRC}"]`,
+    `script[src="${googleScriptSrc}"]`,
   );
   if (existing) {
     console.info("[auth] reusing existing google script tag", {
@@ -110,12 +110,12 @@ function loadGoogleScript(): Promise<void> {
 
   return new Promise((resolve, reject) => {
     console.info("[auth] injecting google script", {
-      src: GOOGLE_SCRIPT_SRC,
+      src: googleScriptSrc,
       origin: window.location.origin,
       clientId: maskClientID(googleClientId),
     });
     const script = document.createElement("script");
-    script.src = GOOGLE_SCRIPT_SRC;
+    script.src = googleScriptSrc;
     script.async = true;
     script.defer = true;
     script.onload = () => resolve();
@@ -140,8 +140,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
       hasStoredToken: !!window.localStorage.getItem(STORAGE_KEY),
     });
 
-    if (!googleClientId) {
-      console.warn("[auth] missing VITE_GOOGLE_CLIENT_ID");
+    if (!googleClientId || !googleScriptSrc) {
+      console.warn("[auth] missing Google auth env", {
+        hasClientId: !!googleClientId,
+        hasScriptSrc: !!googleScriptSrc,
+      });
       setIsReady(true);
       return;
     }
