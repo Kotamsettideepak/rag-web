@@ -12,7 +12,6 @@ import {
   listChats,
   sendVoiceChat,
   uploadFiles,
-  uploadYouTubeUrl,
 } from "../requests/chat";
 import type {
   AttachmentKind,
@@ -101,8 +100,6 @@ function buildStatusText(
       return "Preparing your files for AI processing.";
     case "extracting":
       return "Extracting data from your files.";
-    case "downloading":
-      return "Downloading and preparing the video audio.";
     case "transcribing":
       return "Transcribing audio into searchable text.";
     case "chunking":
@@ -128,8 +125,6 @@ function formatStageTitle(stage?: string) {
       return "Preparing";
     case "extracting":
       return "Extracting";
-    case "downloading":
-      return "Downloading Video";
     case "transcribing":
       return "Transcribing Audio";
     case "chunking":
@@ -244,8 +239,6 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
   const [jobSnapshot, setJobSnapshot] = useState<UploadStatusResponse | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [isSourceModalOpen, setIsSourceModalOpen] = useState(false);
-  const [sourceModalMode, setSourceModalMode] = useState<"files" | "youtube">("files");
-  const [youtubeUrl, setYouTubeUrl] = useState("");
   const [uploadPreviewUrls, setUploadPreviewUrls] = useState<Record<string, string>>({});
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const conversationRef = useRef<HTMLDivElement | null>(null);
@@ -291,7 +284,6 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
       setJobStatus(null);
       setJobSnapshot(null);
       setIsSourceModalOpen(false);
-      setYouTubeUrl("");
     }
   }, [isAuthenticated]);
 
@@ -361,7 +353,6 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
     setSavedUploads([]);
     setJobStatus("completed");
     setJobSnapshot(null);
-    setYouTubeUrl("");
     setIsSourceModalOpen(false);
 
     try {
@@ -385,8 +376,7 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
     fileInputRef.current?.click();
   }
 
-  function openSourceModal(mode: "files" | "youtube" = "files") {
-    setSourceModalMode(mode);
+  function openSourceModal() {
     setIsSourceModalOpen(true);
   }
 
@@ -405,7 +395,6 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
     const skippedCount = selectedFiles.length - sameKindFiles.length;
 
     setUploads(normalizedFiles.map(createAsset));
-    setYouTubeUrl("");
     setIsSourceModalOpen(false);
 
     if (firstKind === "pdf" && sameKindFiles.length > 1) {
@@ -530,38 +519,6 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
       setIsSubmitting(false);
     }
   }
-
-  async function handleYouTubeSubmit() {
-    const trimmedUrl = youtubeUrl.trim();
-    if (!trimmedUrl || isSubmitting || !activeChatId) {
-      return;
-    }
-
-    setUploads([]);
-    setIsSubmitting(true);
-    setJobStatus("queued");
-    setJobSnapshot(null);
-    setFeedback("Submitting YouTube link...");
-
-    try {
-      const response = await uploadYouTubeUrl(trimmedUrl, activeChatId);
-      setJobStatus(response.status);
-      setJobSnapshot(toInitialJobSnapshot(response));
-      setFeedback(buildStatusText(response, "YouTube link accepted."));
-      setIsSourceModalOpen(false);
-      setYouTubeUrl("");
-      connectUploadStatusSocket(response.job_id);
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "YouTube processing failed. Please try again.";
-      setJobStatus("failed");
-      setJobSnapshot(null);
-      setFeedback(message);
-    } finally {
-      setIsSubmitting(false);
-    }
-  }
-
 
   async function handleChatSubmit() {
     const question = draft.trim();
@@ -1002,7 +959,7 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
               </div>
               <div className="auth-feature-card">
                 <strong>Built for mixed media</strong>
-                <span>Work across PDFs, images, audio, video, and YouTube sources.</span>
+                <span>Work across PDFs, images, audio, and video sources.</span>
               </div>
             </div>
           </div>
@@ -1055,7 +1012,7 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
               </div>
               <div className="auth-feature-card">
                 <strong>Multimodal ingestion</strong>
-                <span>Use PDFs, images, audio, video, and YouTube links in one place.</span>
+                <span>Use PDFs, images, audio, and video in one place.</span>
               </div>
               <div className="auth-feature-card">
                 <strong>Fast answers</strong>
@@ -1216,7 +1173,7 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
                   <button
                     type="button"
                     className="icon-button"
-                    onClick={() => openSourceModal("files")}
+                    onClick={() => openSourceModal()}
                     title="Add source"
                   >
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1305,7 +1262,7 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
               ) : (
                 <div className="right-empty">
                   <strong>No files uploaded yet.</strong>
-                  <p>Use the plus button above to pick files from your device or paste one YouTube link.</p>
+                  <p>Use the plus button above to pick files from your device.</p>
                 </div>
               )}
             </div>
@@ -1339,58 +1296,19 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
                 </button>
               </div>
 
-              <div className="source-modal-tabs">
+              <div className="source-modal-body">
+                <p>Select files from your system. Only one file format is accepted at a time, so a new selection replaces the previous staged format.</p>
+                <p>PDF uploads are limited to 300 pages maximum, and only one PDF can be uploaded at a time.</p>
+                <p>Video uploads must be less than 1 hour and less than 300 MB.</p>
                 <button
                   type="button"
-                  className={`source-tab ${sourceModalMode === "files" ? "active" : ""}`}
-                  onClick={() => setSourceModalMode("files")}
+                  className="primary-button"
+                  onClick={openFilePicker}
+                  disabled={isSubmitting || isSending || isProcessing}
                 >
-                  Files
-                </button>
-                <button
-                  type="button"
-                  className={`source-tab ${sourceModalMode === "youtube" ? "active" : ""}`}
-                  onClick={() => setSourceModalMode("youtube")}
-                >
-                  YouTube
+                  Select from device
                 </button>
               </div>
-
-              {sourceModalMode === "files" ? (
-                <div className="source-modal-body">
-                  <p>Select files from your system. Only one file format is accepted at a time, so a new selection replaces the previous staged format.</p>
-                  <p>PDF uploads are limited to 300 pages maximum, and only one PDF can be uploaded at a time.</p>
-                  <button
-                    type="button"
-                    className="primary-button"
-                    onClick={openFilePicker}
-                    disabled={isSubmitting || isSending || isProcessing}
-                  >
-                    Select from device
-                  </button>
-                </div>
-              ) : (
-                <div className="source-modal-body">
-                  <p>Paste one YouTube link. Uploading a YouTube source clears any staged files first.</p>
-                  <p>YouTube videos must be less than 1 hour long.</p>
-                  <input
-                    type="url"
-                    className="youtube-input"
-                    placeholder="https://www.youtube.com/watch?v=..."
-                    value={youtubeUrl}
-                    onChange={(event) => setYouTubeUrl(event.target.value)}
-                    disabled={isSubmitting || isSending || isProcessing}
-                  />
-                  <button
-                    type="button"
-                    className="primary-button"
-                    onClick={() => void handleYouTubeSubmit()}
-                    disabled={!youtubeUrl.trim() || isSubmitting || isSending || isProcessing}
-                  >
-                    {isSubmitting ? "Uploading..." : "Upload YouTube link"}
-                  </button>
-                </div>
-              )}
             </section>
           </div>
         ) : null}

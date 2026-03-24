@@ -69,7 +69,6 @@ export function inferSavedAttachmentKind(
   if (
     normalizedType.startsWith('audio/') ||
     normalizedType === 'audio' ||
-    normalizedType === 'youtube' ||
     ['.mp3', '.wav', '.ogg', '.m4a', '.aac'].some((extension) =>
       normalizedName.endsWith(extension) || normalizedUrl.includes(extension),
     )
