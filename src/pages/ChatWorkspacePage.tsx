@@ -390,8 +390,13 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
     const sameKindFiles = selectedFiles.filter(
       (file) => inferAttachmentKind(file) === firstKind,
     );
+    const MAX_IMAGES = 3;
     const normalizedFiles =
-      firstKind === "pdf" && sameKindFiles.length > 1 ? sameKindFiles.slice(0, 1) : sameKindFiles;
+      firstKind === "pdf" && sameKindFiles.length > 1
+        ? sameKindFiles.slice(0, 1)
+        : firstKind === "image" && sameKindFiles.length > MAX_IMAGES
+          ? sameKindFiles.slice(0, MAX_IMAGES)
+          : sameKindFiles;
     const skippedCount = selectedFiles.length - sameKindFiles.length;
 
     setUploads(normalizedFiles.map(createAsset));
@@ -399,6 +404,13 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
 
     if (firstKind === "pdf" && sameKindFiles.length > 1) {
       setFeedback("Only one PDF can be uploaded at a time. Kept the first PDF only.");
+      return;
+    }
+
+    if (firstKind === "image" && sameKindFiles.length > MAX_IMAGES) {
+      setFeedback(
+        `Only ${MAX_IMAGES} images can be uploaded at a time. Kept the first ${MAX_IMAGES} images.`,
+      );
       return;
     }
 
@@ -1299,6 +1311,7 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
               <div className="source-modal-body">
                 <p>Select files from your system. Only one file format is accepted at a time, so a new selection replaces the previous staged format.</p>
                 <p>PDF uploads are limited to 300 pages maximum, and only one PDF can be uploaded at a time.</p>
+                <p>Image uploads are limited to <strong>3 images</strong> at a time.</p>
                 <p>Video uploads must be less than 1 hour and less than 300 MB.</p>
                 <button
                   type="button"
