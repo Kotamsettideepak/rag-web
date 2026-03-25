@@ -4,7 +4,7 @@ export type MessageRole = "user" | "assistant";
 
 export type UploadState = "local" | "uploading" | "processing" | "ready" | "failed";
 
-export type JobStatus = "queued" | "processing" | "completed" | "failed";
+export type JobStatus = "queued" | "processing" | "chat_ready" | "completed" | "failed";
 
 export interface UploadedAsset {
   id: string;
@@ -114,9 +114,14 @@ export interface UploadStatusResponse {
   created_at: string;
   updated_at: string;
   started_at?: string;
+  chat_ready?: boolean;
+  chat_ready_at?: string;
   completed_at?: string;
   file_count: number;
   files: UploadJobFile[];
+  total_chunks?: number;
+  indexed_chunks?: number;
+  completed_chunks?: number;
   summary?: string;
   detail?: string;
   current_file?: string;

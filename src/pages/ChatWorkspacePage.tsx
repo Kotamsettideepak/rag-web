@@ -98,6 +98,8 @@ function buildStatusText(
       return "Queued. Waiting to start processing.";
     case "processing":
       return "Preparing your files for AI processing.";
+    case "chat_ready":
+      return "Your first indexed chunks are ready. You can start chatting while indexing continues.";
     case "extracting":
       return "Extracting data from your files.";
     case "transcribing":
@@ -123,6 +125,8 @@ function formatStageTitle(stage?: string) {
       return "Queued";
     case "processing":
       return "Preparing";
+    case "chat_ready":
+      return "Chat Ready";
     case "extracting":
       return "Extracting";
     case "transcribing":
@@ -212,6 +216,7 @@ function toInitialJobSnapshot(response: UploadFilesResponse): UploadStatusRespon
     stage: response.stage,
     created_at: now,
     updated_at: now,
+    chat_ready: response.status === "chat_ready" || response.status === "completed",
     file_count: response.files.length,
     files: response.files,
     summary: response.summary ?? response.message,
@@ -261,7 +266,7 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
   const activeChat = chats.find((chat) => chat.id === activeChatId) || null;
   const hasSource =
     uploads.length > 0 || savedUploads.length > 0;
-  const isChatReady = jobStatus === "completed" || jobStatus === null;
+  const isChatReady = jobStatus === "chat_ready" || jobStatus === "completed" || jobStatus === null;
   const isProcessing = jobStatus === "queued" || jobStatus === "processing";
   const hasPendingUploads = uploads.length > 0;
   const hasStartedConversation = messages.length > 0;
@@ -922,6 +927,18 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
     setJobSnapshot(event);
     setFeedback(buildStatusText(event, "Processing upload..."));
 
+    if (event.status === "chat_ready") {
+      setUploads((current) =>
+        current.map((upload) => ({ ...upload, status: "ready" })),
+      );
+      if (activeChatId) {
+        void getChatUploads(activeChatId)
+          .then((response) => setSavedUploads(response.uploads))
+          .catch(() => {});
+      }
+      return;
+    }
+
     if (event.status === "completed") {
       uploadSocketRef.current?.close();
       setUploads([]);
@@ -950,7 +967,10 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
     }
 
     setUploads((current) =>
-      current.map((upload) => ({ ...upload, status: "processing" })),
+      current.map((upload) => ({
+        ...upload,
+        status: event.status === "chat_ready" ? "ready" : "processing",
+      })),
     );
   }
 
@@ -1098,7 +1118,7 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
                 </div>
               </header>
 
-              {jobSnapshot ? (
+              {jobSnapshot && !isChatReady ? (
                 <section className={`processing-gate ${jobSnapshot.status === "processing" ? "active" : ""}`}>
                   <div className="processing-indicator" aria-hidden="true">
                     <span />
