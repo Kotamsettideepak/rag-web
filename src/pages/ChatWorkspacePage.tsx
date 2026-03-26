@@ -51,7 +51,7 @@ function createMessage(role: ChatMessage["role"], content: string): ChatMessage 
   return {
     id: crypto.randomUUID(),
     role,
-    content,
+    content: typeof content === "string" ? content : "",
     createdAt: new Date().toISOString(),
     state: "complete",
   };
@@ -61,7 +61,7 @@ function createPendingAssistantMessage(copy = ""): ChatMessage {
   return {
     id: crypto.randomUUID(),
     role: "assistant",
-    content: copy,
+    content: typeof copy === "string" ? copy : "",
     createdAt: new Date().toISOString(),
     state: "pending",
   };
@@ -71,7 +71,7 @@ function mapStoredMessage(message: StoredMessage): ChatMessage {
   return {
     id: message.id,
     role: message.role,
-    content: message.content,
+    content: typeof message.content === "string" ? message.content : "",
     createdAt: message.created_at,
     state: "complete",
   };

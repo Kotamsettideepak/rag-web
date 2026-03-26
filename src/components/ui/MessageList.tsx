@@ -64,36 +64,37 @@ export const MessageList = memo(function MessageList({
 
   return (
     <div className="message-list">
-      {messages.map((message) => (
-        <article key={message.id} className={`message-bubble ${message.role}`}>
-          <div className="message-head">
-            <span>{labelForRole(message.role)}</span>
-            <span className="message-time">{formatRelativeLabel(message.createdAt)}</span>
-          </div>
-          {message.state === "pending" ? (
-            <div className="message-loader" aria-label="Waiting for response">
-              <div className="message-loader-bars" aria-hidden="true">
-                <span />
-                <span />
-                <span />
-              </div>
-              <div className="message-loader-copy">
-                <strong>Working on it...</strong>
-                <span>Searching your uploaded context and preparing the reply.</span>
-              </div>
+      {messages.map((message) => {
+        const safeContent = typeof message.content === "string" ? message.content : "";
+        const displayContent =
+          message.state === "streaming" && safeContent.length === 0 ? "..." : safeContent;
+
+        return (
+          <article key={message.id} className={`message-bubble ${message.role}`}>
+            <div className="message-head">
+              <span>{labelForRole(message.role)}</span>
+              <span className="message-time">{formatRelativeLabel(message.createdAt)}</span>
             </div>
-          ) : (
-            (message.state === "streaming" && message.content.length === 0
-              ? "..."
-              : message.content
-            )
-              .split("\n")
-              .map((paragraph, index) => (
+            {message.state === "pending" ? (
+              <div className="message-loader" aria-label="Waiting for response">
+                <div className="message-loader-bars" aria-hidden="true">
+                  <span />
+                  <span />
+                  <span />
+                </div>
+                <div className="message-loader-copy">
+                  <strong>Working on it...</strong>
+                  <span>Searching your uploaded context and preparing the reply.</span>
+                </div>
+              </div>
+            ) : (
+              displayContent.split("\n").map((paragraph, index) => (
                 <p key={`${message.id}-${index}`}>{paragraph}</p>
               ))
-          )}
-        </article>
-      ))}
+            )}
+          </article>
+        );
+      })}
     </div>
   );
 });
