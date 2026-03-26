@@ -259,9 +259,6 @@ export async function sendVoiceChat(
     await delay(900);
     return {
       transcript: "Mock transcript",
-      answer: "Mock voice answer",
-      audio_base64: "",
-      audio_mime_type: "audio/mpeg",
     };
   }
 

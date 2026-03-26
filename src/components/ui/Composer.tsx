@@ -5,8 +5,10 @@ interface ComposerProps {
   isSending: boolean;
   isDisabled: boolean;
   isRecording?: boolean;
+  canStop?: boolean;
   onChange: (value: string) => void;
   onSubmit: () => void;
+  onStop?: () => void;
   onVoiceToggle?: () => void;
 }
 
@@ -15,8 +17,10 @@ export const Composer = memo(function Composer({
   isSending,
   isDisabled,
   isRecording = false,
+  canStop = false,
   onChange,
   onSubmit,
+  onStop,
   onVoiceToggle,
 }: ComposerProps) {
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -78,6 +82,18 @@ export const Composer = memo(function Composer({
           </svg>
         )}
       </button>
+
+      {canStop ? (
+        <button
+          type="button"
+          className="send-button stop-button"
+          aria-label="Stop response"
+          title="Stop response"
+          onClick={onStop}
+        >
+          Stop
+        </button>
+      ) : null}
     </form>
   );
 });

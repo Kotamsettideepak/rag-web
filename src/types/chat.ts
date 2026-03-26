@@ -36,9 +36,6 @@ export interface AskQuestionResponse {
 
 export interface VoiceChatResponse {
   transcript: string;
-  answer: string;
-  audio_base64: string;
-  audio_mime_type: string;
 }
 
 export type ChatStreamEventType = "start" | "chunk" | "done" | "error";

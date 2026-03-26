@@ -243,6 +243,7 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
   const [jobStatus, setJobStatus] = useState<JobStatus | null>(null);
   const [jobSnapshot, setJobSnapshot] = useState<UploadStatusResponse | null>(null);
   const [isRecording, setIsRecording] = useState(false);
+  const [isSpeakingResponse, setIsSpeakingResponse] = useState(false);
   const [isSourceModalOpen, setIsSourceModalOpen] = useState(false);
   const [uploadPreviewUrls, setUploadPreviewUrls] = useState<Record<string, string>>({});
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -259,9 +260,11 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
   const animationFrameRef = useRef<number | null>(null);
   const silenceDeadlineRef = useRef<number | null>(null);
   const hasDetectedSpeechRef = useRef(false);
-  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
   const voiceAbortRef = useRef<AbortController | null>(null);
   const googleButtonRef = useRef<HTMLDivElement | null>(null);
+  const isStoppingResponseRef = useRef(false);
+  const shouldSpeakNextAnswerRef = useRef(false);
+  const currentUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
 
   const activeChat = chats.find((chat) => chat.id === activeChatId) || null;
   const hasSource =
@@ -543,24 +546,12 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
       return;
     }
 
-    setDraft("");
-    setIsSending(true);
-    setMessages((current) => [
-      ...current,
-      createMessage("user", question),
-      createPendingAssistantMessage(),
-    ]);
-
     try {
-      await sendQuestionOverSocket(activeChatId, question);
+      await submitQuestion(activeChatId, question, { clearDraft: true });
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Chat request failed. Please try again.";
-      setMessages((current) => [
-        ...current.filter((entry) => entry.state !== "pending"),
-        createMessage("assistant", `Request failed: ${message}`),
-      ]);
-      setIsSending(false);
+      failActiveResponse(message);
     }
   }
 
@@ -577,6 +568,7 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
     voiceAbortRef.current?.abort();
     voiceAbortRef.current = null;
     stopPlaybackAudio();
+    primeSpeechSynthesis();
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -619,51 +611,53 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
     }
 
     setIsSending(true);
-    setFeedback("Transcribing and answering...");
+    setFeedback("Transcribing your question...");
     const controller = new AbortController();
     voiceAbortRef.current = controller;
-    setMessages((current) => [...current, createPendingAssistantMessage()]);
 
     try {
       const response = await sendVoiceChat(audioBlob, activeChatId, controller.signal);
-      setMessages((current) => {
-        const nextMessages = current.filter(
-          (entry) => !(entry.role === "assistant" && entry.state === "pending"),
-        );
-        return [
-          ...nextMessages,
-          createMessage("user", response.transcript),
-          createMessage("assistant", response.answer),
-        ];
-      });
-
-      if (response.audio_base64) {
-        stopPlaybackAudio();
-        const audio = new Audio(
-          `data:${response.audio_mime_type};base64,${response.audio_base64}`,
-        );
-        currentAudioRef.current = audio;
-        audio.addEventListener("ended", () => {
-          if (currentAudioRef.current === audio) {
-            currentAudioRef.current = null;
-          }
-        });
-        void audio.play();
+      if (!response.transcript.trim()) {
+        throw new Error("Transcript was empty.");
+      }
+      await submitQuestion(activeChatId, response.transcript, { speakAnswer: true });
+      setFeedback("Voice question sent.");
+    } catch (error) {
+      if (controller.signal.aborted) {
+        shouldSpeakNextAnswerRef.current = false;
+        setFeedback("Voice request stopped.");
+        setIsSending(false);
+        return;
       }
 
-      setFeedback("Voice response ready.");
-    } catch (error) {
       const message =
         error instanceof Error ? error.message : "Voice chat failed. Please try again.";
-      setMessages((current) => [
-        ...current.filter((entry) => !(entry.role === "assistant" && entry.state === "pending")),
-        createMessage("assistant", `Voice request failed: ${message}`),
-      ]);
+      shouldSpeakNextAnswerRef.current = false;
+      failActiveResponse(`Voice request failed: ${message}`);
       setFeedback(message);
     } finally {
       voiceAbortRef.current = null;
-      setIsSending(false);
     }
+  }
+
+  async function submitQuestion(
+    chatId: string,
+    question: string,
+    options: { clearDraft?: boolean; speakAnswer?: boolean } = {},
+  ) {
+    if (options.clearDraft) {
+      setDraft("");
+    }
+    shouldSpeakNextAnswerRef.current = !!options.speakAnswer;
+
+    setIsSending(true);
+    setMessages((current) => [
+      ...current,
+      createMessage("user", question),
+      createPendingAssistantMessage(),
+    ]);
+
+    await sendQuestionOverSocket(chatId, question);
   }
 
   function setupSilenceDetection(stream: MediaStream) {
@@ -745,13 +739,62 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
   }
 
   function stopPlaybackAudio() {
-    if (!currentAudioRef.current) {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
       return;
     }
 
-    currentAudioRef.current.pause();
-    currentAudioRef.current.currentTime = 0;
-    currentAudioRef.current = null;
+    currentUtteranceRef.current = null;
+    setIsSpeakingResponse(false);
+    window.speechSynthesis.cancel();
+  }
+
+  function handleStopResponse() {
+    stopVoiceCapture();
+    stopPlaybackAudio();
+    voiceAbortRef.current?.abort();
+    voiceAbortRef.current = null;
+
+    if (isSending) {
+      isStoppingResponseRef.current = true;
+      chatSocketRef.current?.close();
+      chatSocketRef.current = null;
+      finishStoppedResponse();
+      return;
+    }
+
+    setFeedback("Response stopped.");
+  }
+
+  function finishStoppedResponse() {
+    const targetId = activeAssistantMessageIdRef.current;
+    activeAssistantMessageIdRef.current = null;
+    shouldSpeakNextAnswerRef.current = false;
+    setIsSending(false);
+    setFeedback("Response stopped.");
+    setMessages((current) =>
+      current.flatMap((message) => {
+        if (message.id !== targetId) {
+          return [message];
+        }
+        if (message.content.trim().length === 0) {
+          return [];
+        }
+        return [{ ...message, state: "complete" }];
+      }),
+    );
+  }
+
+  function failActiveResponse(message: string) {
+    const targetId = activeAssistantMessageIdRef.current;
+    activeAssistantMessageIdRef.current = null;
+    shouldSpeakNextAnswerRef.current = false;
+    setIsSending(false);
+    setMessages((current) => {
+      const nextMessages = current.filter(
+        (entry) => entry.state !== "pending" && entry.id !== targetId,
+      );
+      return [...nextMessages, createMessage("assistant", `Request failed: ${message}`)];
+    });
   }
 
   function ensureSocket(): Promise<WebSocket> {
@@ -786,6 +829,9 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
         onMessage: handleSocketMessage,
         onClose: () => {
           chatSocketRef.current = null;
+          if (isStoppingResponseRef.current) {
+            isStoppingResponseRef.current = false;
+          }
         },
         onError: () => {
           reject(new Error("WebSocket connection failed."));
@@ -847,8 +893,13 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
       activeAssistantMessageIdRef.current = null;
       setIsSending(false);
       setFeedback("Response streamed successfully.");
+      const finalAnswer = event.answer || "";
 
       if (!targetId) {
+        if (shouldSpeakNextAnswerRef.current && finalAnswer.trim()) {
+          speakAnswer(finalAnswer);
+        }
+        shouldSpeakNextAnswerRef.current = false;
         return;
       }
 
@@ -857,24 +908,23 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
           message.id === targetId
             ? {
                 ...message,
-                content: event.answer || message.content,
+                content: finalAnswer || message.content,
                 state: "complete",
               }
             : message,
         ),
       );
+      if (shouldSpeakNextAnswerRef.current && (finalAnswer || "").trim()) {
+        speakAnswer(finalAnswer);
+      }
+      shouldSpeakNextAnswerRef.current = false;
       return;
     }
 
     if (event.type === "error") {
-      activeAssistantMessageIdRef.current = null;
-      setIsSending(false);
       const errorMessage = event.message || "Streaming failed.";
       setFeedback(errorMessage);
-      setMessages((current) => [
-        ...current.filter((message) => !(message.role === "assistant" && message.state === "pending")),
-        createMessage("assistant", `Request failed: ${errorMessage}`),
-      ]);
+      failActiveResponse(errorMessage);
     }
   }
 
@@ -887,6 +937,70 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
         question,
       }),
     );
+  }
+
+  function speakAnswer(text: string) {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      setFeedback("Browser voice is not supported here.");
+      return;
+    }
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    const voices = window.speechSynthesis.getVoices();
+    const preferredVoice =
+      voices.find((voice) => voice.lang?.toLowerCase().startsWith(navigator.language.toLowerCase())) ||
+      voices.find((voice) => voice.default) ||
+      voices[0];
+
+    if (preferredVoice) {
+      utterance.voice = preferredVoice;
+      utterance.lang = preferredVoice.lang;
+    } else {
+      utterance.lang = navigator.language || "en-US";
+    }
+
+    utterance.rate = 1;
+    utterance.pitch = 1;
+    utterance.volume = 1;
+    utterance.onstart = () => {
+      setIsSpeakingResponse(true);
+      setFeedback("Reading the answer aloud...");
+    };
+    utterance.onend = () => {
+      if (currentUtteranceRef.current === utterance) {
+        currentUtteranceRef.current = null;
+      }
+      setIsSpeakingResponse(false);
+      setFeedback("Voice response finished.");
+    };
+    utterance.onerror = () => {
+      if (currentUtteranceRef.current === utterance) {
+        currentUtteranceRef.current = null;
+      }
+      setIsSpeakingResponse(false);
+      setFeedback("Browser voice could not play this response.");
+    };
+
+    currentUtteranceRef.current = utterance;
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.resume();
+    window.setTimeout(() => {
+      if (currentUtteranceRef.current === utterance) {
+        window.speechSynthesis.speak(utterance);
+      }
+    }, 0);
+  }
+
+  function primeSpeechSynthesis() {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      return;
+    }
+
+    window.speechSynthesis.getVoices();
+    window.speechSynthesis.resume();
+    if (window.speechSynthesis.paused) {
+      window.speechSynthesis.cancel();
+    }
   }
 
   function connectUploadStatusSocket(nextJobId: string) {
@@ -1149,8 +1263,10 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
                   isSending={isSending}
                   isDisabled={isProcessing}
                   isRecording={isRecording}
+                  canStop={isSpeakingResponse}
                   onChange={setDraft}
                   onSubmit={() => void handleChatSubmit()}
+                  onStop={handleStopResponse}
                   onVoiceToggle={() => void handleVoiceToggle()}
                 />
               </section>
