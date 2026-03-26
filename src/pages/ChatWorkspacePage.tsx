@@ -1332,7 +1332,7 @@ export const ChatWorkspacePage = memo(function ChatWorkspacePage() {
                 <p>Select files from your system. Only one file format is accepted at a time, so a new selection replaces the previous staged format.</p>
                 <p>PDF uploads are limited to 300 pages maximum, and only one PDF can be uploaded at a time.</p>
                 <p>Image uploads are limited to <strong>3 images</strong> at a time.</p>
-                <p>Video uploads must be less than 1 hour and less than 300 MB.</p>
+                <p>Video uploads must be less than 1 hour and less than 150 MB.</p>
                 <button
                   type="button"
                   className="primary-button"
