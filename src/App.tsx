@@ -1,12 +1,13 @@
-import { AuthProvider } from "./auth/googleAuth";
-import { ChatWorkspacePage } from './pages/ChatWorkspacePage'
+import { memo } from "react";
+import { AppProviders } from "./providers/app_providers";
+import { AppRouter } from "./router/app_router";
 
-function App() {
+const App = memo(function App() {
   return (
-    <AuthProvider>
-      <ChatWorkspacePage />
-    </AuthProvider>
-  )
-}
+    <AppProviders>
+      <AppRouter />
+    </AppProviders>
+  );
+});
 
-export default App
+export default App;
