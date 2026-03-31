@@ -1,14 +1,19 @@
 import { useCallback } from "react";
 import { openChatSocket } from "../requests/chat_request";
-import type { chat_stream_event } from "../types/chat";
+import type { chat_history_message, chat_stream_event } from "../types/chat";
 
 interface stream_handlers {
   onOpen?: () => void;
   onMessage?: (event: chat_stream_event) => void;
 }
 
+interface stream_target {
+  chatId?: string;
+  recentMessages?: chat_history_message[];
+}
+
 export function useChatStream() {
-  return useCallback((chatId: string, question: string, handlers: stream_handlers = {}) => {
+  return useCallback((target: stream_target, question: string, handlers: stream_handlers = {}) => {
     return new Promise<void>((resolve, reject) => {
       let didFinish = false;
 
@@ -18,8 +23,9 @@ export function useChatStream() {
           socket.send(
             JSON.stringify({
               type: "ask",
-              chat_id: chatId,
+              chat_id: target.chatId,
               question,
+              recent_messages: target.recentMessages,
             }),
           );
         },

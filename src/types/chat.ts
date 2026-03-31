@@ -9,6 +9,11 @@ export interface chat_message {
   state?: message_state;
 }
 
+export interface chat_history_message {
+  role: message_role;
+  content: string;
+}
+
 export interface stored_message {
   id: string;
   chat_id: string;
@@ -41,8 +46,9 @@ export interface delete_chat_response {
 }
 
 export interface ask_question_request {
-  chat_id: string;
+  chat_id?: string;
   message: string;
+  recent_messages?: chat_history_message[];
 }
 
 export interface ask_question_response {

@@ -4,7 +4,6 @@ import { app_routes } from "../constants/routes";
 import { AppLayout } from "../layout/app_layout";
 import { AuthLayout } from "../layout/auth_layout";
 import { RootLayout } from "../layout/root_layout";
-import { AdminPage } from "../pages/admin_page";
 import { ChatPage } from "../pages/chat_page";
 import { NotFoundPage } from "../pages/not_found_page";
 import { SignInPage } from "../pages/sign_in_page";
@@ -21,7 +20,6 @@ export const AppRouter = memo(function AppRouter() {
         <Route element={<ProtectedRoute />}>
           <Route element={<AppLayout />}>
             <Route path={app_routes.chat} element={<ChatPage />} />
-            <Route path={app_routes.admin} element={<AdminPage />} />
           </Route>
         </Route>
         <Route path="*" element={<NotFoundPage />} />

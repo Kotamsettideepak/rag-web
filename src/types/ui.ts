@@ -1,4 +1,3 @@
-export type theme_mode = "light" | "dark";
 export type toast_variant = "info" | "success" | "warning" | "danger";
 
 export interface toast_item {

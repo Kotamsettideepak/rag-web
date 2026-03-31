@@ -8,10 +8,10 @@ interface chat_composer_props {
   isRecording: boolean;
   isSpeaking: boolean;
   disabled: boolean;
+  showUpload?: boolean;
   onChange: (value: string) => void;
   onUpload: () => void;
   onMicToggle: () => void;
-  onSpeakToggle: () => void;
   onSend: () => void;
 }
 
@@ -21,10 +21,10 @@ export const ChatComposer = memo(function ChatComposer({
   isRecording,
   isSpeaking,
   disabled,
+  showUpload = true,
   onChange,
   onUpload,
   onMicToggle,
-  onSpeakToggle,
   onSend,
 }: chat_composer_props) {
   const handleSubmit = useCallback(
@@ -53,9 +53,9 @@ export const ChatComposer = memo(function ChatComposer({
         isSending={isSending}
         canSend={value.trim().length > 0}
         disabled={disabled}
+        showUpload={showUpload}
         onUpload={onUpload}
         onMicToggle={onMicToggle}
-        onSpeakToggle={onSpeakToggle}
         onSend={onSend}
       />
     </form>

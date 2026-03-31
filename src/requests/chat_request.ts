@@ -79,10 +79,19 @@ export async function askQuestion(payload: ask_question_request): Promise<ask_qu
   return response.data;
 }
 
-export async function sendVoiceChat(audio: Blob, chatId: string, signal?: AbortSignal): Promise<voice_chat_response> {
+export async function sendVoiceChat(
+  audio: Blob,
+  target: { chatId?: string },
+  signal?: AbortSignal,
+): Promise<voice_chat_response> {
   if (use_mocks) {
     await delay(500);
     return { transcript: "Mock transcript from voice input" };
+  }
+
+  const chatId = target.chatId?.trim();
+  if (!chatId) {
+    throw new Error("chat_id is required for voice chat");
   }
 
   const formData = new FormData();

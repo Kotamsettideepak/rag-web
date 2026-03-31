@@ -26,10 +26,7 @@
   body {
     margin: 0;
     min-width: 320px;
-    background:
-      radial-gradient(circle at left top, rgba(191, 219, 254, 0.82), transparent 28%),
-      radial-gradient(circle at right top, rgba(254, 240, 138, 0.86), transparent 24%),
-      linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+    background: #f8fafc;
     color: #16213d;
     font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
   }
@@ -54,9 +51,7 @@
   }
 
   .soft-app-panel {
-    background:
-      radial-gradient(circle at left top, rgba(219, 234, 254, 0.45), transparent 28%),
-      linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(255, 255, 255, 0.88));
+    background: rgba(255, 255, 255, 0.94);
     border: 1px solid rgba(203, 213, 225, 0.72);
     box-shadow: 0 26px 70px rgba(15, 23, 42, 0.08);
     backdrop-filter: blur(14px);

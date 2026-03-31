@@ -5,6 +5,8 @@ const videoExtensions = [".mp4", ".webm", ".mov", ".mkv", ".avi"];
 const audioExtensions = [".mp3", ".wav", ".ogg", ".m4a", ".aac"];
 
 export const accepted_file_types = ".pdf,image/*,video/*,audio/*";
+export const normal_chat_video_size_limit_bytes = 150 * 1024 * 1024;
+export const normal_chat_image_limit = 3;
 
 export function inferAttachmentKind(file: File): attachment_kind {
   const fileName = file.name.toLowerCase();
@@ -73,4 +75,42 @@ export function createUploadAsset(file: File): upload_asset {
     kind: inferAttachmentKind(file),
     status: "local",
   };
+}
+
+export function validateNormalChatSelection(files: File[]) {
+  if (files.length === 0) {
+    return null;
+  }
+
+  const firstKind = inferAttachmentKind(files[0]);
+  if (firstKind === "unknown") {
+    return "This file type is not supported.";
+  }
+
+  for (const file of files) {
+    const kind = inferAttachmentKind(file);
+    if (kind === "unknown") {
+      return `Unsupported file type: ${file.name}`;
+    }
+    if (kind !== firstKind) {
+      return "Only one file format is accepted at a time. Select files of the same format.";
+    }
+  }
+
+  if (firstKind === "pdf" && files.length > 1) {
+    return "Only one PDF can be uploaded at a time.";
+  }
+
+  if (firstKind === "image" && files.length > normal_chat_image_limit) {
+    return `Image uploads are limited to ${normal_chat_image_limit} images at a time.`;
+  }
+
+  if (firstKind === "video") {
+    const oversizeFile = files.find((file) => file.size > normal_chat_video_size_limit_bytes);
+    if (oversizeFile) {
+      return "Video uploads must be less than 150 MB.";
+    }
+  }
+
+  return null;
 }

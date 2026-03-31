@@ -55,10 +55,6 @@ export default {
       borderRadius: {
         shell: "1.5rem",
       },
-      backgroundImage: {
-        "page-grid":
-          "radial-gradient(circle at left top, rgba(191,219,254,0.82), transparent 30%), radial-gradient(circle at right top, rgba(254,240,138,0.86), transparent 26%), linear-gradient(180deg, #f8fafc 0%, #ffffff 100%)",
-      },
     },
   },
   plugins: [],

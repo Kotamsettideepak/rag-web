@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { Mic, Paperclip, SendHorizontal, Square, Volume2 } from "lucide-react";
+import { Mic, Paperclip, SendHorizontal, Square } from "lucide-react";
 import { Button } from "../ui/button";
 import { Tooltip } from "../ui/tooltip";
 
@@ -9,9 +9,9 @@ interface voice_action_group_props {
   isSending: boolean;
   canSend: boolean;
   disabled: boolean;
+  showUpload?: boolean;
   onUpload: () => void;
   onMicToggle: () => void;
-  onSpeakToggle: () => void;
   onSend: () => void;
 }
 
@@ -21,26 +21,29 @@ export const VoiceActionGroup = memo(function VoiceActionGroup({
   isSending,
   canSend,
   disabled,
+  showUpload = true,
   onUpload,
   onMicToggle,
-  onSpeakToggle,
   onSend,
 }: voice_action_group_props) {
+  const micTooltip = isSpeaking
+    ? "Stop speaking"
+    : isRecording
+      ? "Stop recording and send your question"
+      : "Recording auto-sends after 3 seconds of silence.";
+
   return (
     <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 md:flex-nowrap">
-      <Tooltip content="Upload files">
-        <Button variant="secondary" size="icon" onClick={onUpload} disabled={disabled}>
-          <Paperclip size={18} />
-        </Button>
-      </Tooltip>
-      <Tooltip content={isRecording ? "Stop recording" : "Start recording"}>
-        <Button variant={isRecording ? "danger" : "secondary"} size="icon" onClick={onMicToggle} disabled={disabled}>
-          <Mic size={18} />
-        </Button>
-      </Tooltip>
-      <Tooltip content={isSpeaking ? "Stop speaking" : "Speak latest response"}>
-        <Button variant={isSpeaking ? "danger" : "secondary"} size="icon" onClick={onSpeakToggle} disabled={disabled}>
-          {isSpeaking ? <Square size={18} /> : <Volume2 size={18} />}
+      {showUpload ? (
+        <Tooltip content="Upload files">
+          <Button variant="secondary" size="icon" onClick={onUpload} disabled={disabled}>
+            <Paperclip size={18} />
+          </Button>
+        </Tooltip>
+      ) : null}
+      <Tooltip content={micTooltip}>
+        <Button variant={isRecording || isSpeaking ? "danger" : "secondary"} size="icon" onClick={onMicToggle} disabled={disabled}>
+          {isRecording || isSpeaking ? <Square size={18} /> : <Mic size={18} />}
         </Button>
       </Tooltip>
       <Button className="gap-2 whitespace-nowrap" onClick={onSend} disabled={!canSend || disabled}>

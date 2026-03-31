@@ -14,7 +14,7 @@ export interface upload_asset {
 
 export interface saved_upload {
   id: string;
-  chat_id: string;
+  chat_id?: string | null;
   file_url: string;
   file_type: string;
   original_file_name: string;

@@ -2,7 +2,6 @@ import { memo } from "react";
 import {
   ChevronLeft,
   ChevronRight,
-  FolderOpen,
   Inbox,
   MessageSquarePlus,
   Trash2,
@@ -57,24 +56,12 @@ export const ChatSidebar = memo(function ChatSidebar({
       </div>
 
       {isOpen ? (
-        <div className="mb-5 space-y-2">
-          <button
-            type="button"
-            className="smooth-transition flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left text-[#65758f] hover:bg-white/70"
-          >
-            <FolderOpen size={18} />
-            <span className="font-medium">Topics</span>
-          </button>
-        </div>
-      ) : null}
-
-      {isOpen ? (
         <div className="scrollbar-subtle flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
         {isLoading
           ? Array.from({ length: 5 }).map((_, index) => (
               <div
                 key={`chat-skeleton-${index}`}
-                className="animate-pulse rounded-3xl border border-slate-200/80 bg-white/70 p-3"
+              className="animate-pulse rounded-3xl border border-slate-200/80 bg-white/70 p-3"
               >
                 <div className="h-4 w-2/3 rounded-full bg-slate-200" />
                 <div className="mt-3 h-3 w-1/2 rounded-full bg-slate-100" />
