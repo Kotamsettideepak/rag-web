@@ -47,6 +47,7 @@ export interface delete_chat_response {
 
 export interface ask_question_request {
   chat_id?: string;
+  topic_id?: string;
   message: string;
   recent_messages?: chat_history_message[];
 }

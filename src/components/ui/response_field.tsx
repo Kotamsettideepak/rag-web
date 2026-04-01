@@ -1,6 +1,7 @@
 import { memo } from "react";
 import { formatTime } from "../../lib/date";
 import type { chat_message } from "../../types/chat";
+import { MarkdownContent } from "./markdown_content";
 
 interface response_field_props {
   message: chat_message;
@@ -23,7 +24,7 @@ export const ResponseField = memo(function ResponseField({ message }: response_f
           <span className="text-sm text-text-muted">Preparing a grounded answer...</span>
         </div>
       ) : (
-        <p className="m-0 whitespace-pre-wrap text-[1.06rem] leading-9 text-[#24304a]">{message.content || "..."}</p>
+        <MarkdownContent content={message.content || "..."} />
       )}
     </article>
   );

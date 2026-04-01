@@ -9,6 +9,7 @@ interface stream_handlers {
 
 interface stream_target {
   chatId?: string;
+  topicId?: string;
   recentMessages?: chat_history_message[];
 }
 
@@ -24,6 +25,7 @@ export function useChatStream() {
             JSON.stringify({
               type: "ask",
               chat_id: target.chatId,
+              topic_id: target.topicId,
               question,
               recent_messages: target.recentMessages,
             }),

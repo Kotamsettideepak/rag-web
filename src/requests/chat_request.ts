@@ -81,7 +81,7 @@ export async function askQuestion(payload: ask_question_request): Promise<ask_qu
 
 export async function sendVoiceChat(
   audio: Blob,
-  target: { chatId?: string },
+  target: { chatId?: string; topicId?: string },
   signal?: AbortSignal,
 ): Promise<voice_chat_response> {
   if (use_mocks) {
@@ -89,14 +89,14 @@ export async function sendVoiceChat(
     return { transcript: "Mock transcript from voice input" };
   }
 
-  const chatId = target.chatId?.trim();
-  if (!chatId) {
-    throw new Error("chat_id is required for voice chat");
-  }
-
   const formData = new FormData();
   formData.append("audio", audio, "voice-question.webm");
-  formData.append("chat_id", chatId);
+  if (target.chatId?.trim()) {
+    formData.append("chat_id", target.chatId.trim());
+  }
+  if (target.topicId?.trim()) {
+    formData.append("topic_id", target.topicId.trim());
+  }
 
   const response = await api_client.post<voice_chat_response>("/voice/chat", formData, {
     headers: {

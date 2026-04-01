@@ -9,6 +9,7 @@ interface chat_composer_props {
   isSpeaking: boolean;
   disabled: boolean;
   showUpload?: boolean;
+  showVoice?: boolean;
   onChange: (value: string) => void;
   onUpload: () => void;
   onMicToggle: () => void;
@@ -22,6 +23,7 @@ export const ChatComposer = memo(function ChatComposer({
   isSpeaking,
   disabled,
   showUpload = true,
+  showVoice = true,
   onChange,
   onUpload,
   onMicToggle,
@@ -54,6 +56,7 @@ export const ChatComposer = memo(function ChatComposer({
         canSend={value.trim().length > 0}
         disabled={disabled}
         showUpload={showUpload}
+        showVoice={showVoice}
         onUpload={onUpload}
         onMicToggle={onMicToggle}
         onSend={onSend}
