@@ -54,6 +54,7 @@ function mapStoredMessage(message: stored_message): chat_message {
     id: message.id,
     role: message.role,
     content: message.content,
+    thinking: "",
     createdAt: message.created_at,
     state: "complete",
   };
@@ -68,6 +69,7 @@ function createLocalMessage(
     id: crypto.randomUUID(),
     role,
     content,
+    thinking: "",
     createdAt: new Date().toISOString(),
     state,
   };
@@ -630,6 +632,19 @@ export const ChatPage = memo(function ChatPage() {
             if (event.type === "start") {
               return;
             }
+            if (event.type === "thinking") {
+              setMessages((currentMessages) =>
+                currentMessages.map((message) =>
+                  message.id === assistantMessage.id
+                    ? {
+                        ...message,
+                        thinking: `${message.thinking || ""}${event.thinking || ""}`,
+                      }
+                    : message,
+                ),
+              );
+              return;
+            }
             if (event.type === "chunk") {
               setMessages((currentMessages) =>
                 currentMessages.map((message) =>
@@ -637,6 +652,7 @@ export const ChatPage = memo(function ChatPage() {
                     ? {
                         ...message,
                         state: "streaming",
+                        thinking: "",
                         content: `${message.content}${event.content || ""}`,
                       }
                     : message,
@@ -651,6 +667,7 @@ export const ChatPage = memo(function ChatPage() {
                     ? {
                         ...message,
                         state: "complete",
+                        thinking: "",
                         content: event.answer || message.content,
                       }
                     : message,
@@ -670,6 +687,7 @@ export const ChatPage = memo(function ChatPage() {
               ? {
                   ...message,
                   state: "complete",
+                  thinking: "",
                   content:
                     error instanceof Error
                       ? error.message

@@ -16,7 +16,7 @@ import type { quiz_question, quiz_session_detail, quiz_session_summary } from ".
 import type { topic_summary } from "../types/topic";
 
 function createLocalMessage(role: chat_message["role"], content: string, state: chat_message["state"] = "complete"): chat_message {
-  return { id: crypto.randomUUID(), role, content, createdAt: new Date().toISOString(), state };
+  return { id: crypto.randomUUID(), role, content, thinking: "", createdAt: new Date().toISOString(), state };
 }
 
 function buildRecentHistory(messages: chat_message[]): chat_history_message[] {
@@ -161,16 +161,19 @@ export const TopicChatPage = memo(function TopicChatPage() {
     try {
       await streamQuestion({ topicId, recentMessages: buildRecentHistory(messages) }, question, {
         onMessage: (event) => {
+          if (event.type === "thinking") {
+            setMessages((current) => current.map((message) => message.id === assistantMessage.id ? { ...message, thinking: `${message.thinking || ""}${event.thinking || ""}` } : message));
+          }
           if (event.type === "chunk") {
-            setMessages((current) => current.map((message) => message.id === assistantMessage.id ? { ...message, state: "streaming", content: `${message.content}${event.content || ""}` } : message));
+            setMessages((current) => current.map((message) => message.id === assistantMessage.id ? { ...message, state: "streaming", thinking: "", content: `${message.content}${event.content || ""}` } : message));
           }
           if (event.type === "done") {
-            setMessages((current) => current.map((message) => message.id === assistantMessage.id ? { ...message, state: "complete", content: event.answer || message.content } : message));
+            setMessages((current) => current.map((message) => message.id === assistantMessage.id ? { ...message, state: "complete", thinking: "", content: event.answer || message.content } : message));
           }
         },
       });
     } catch (error) {
-      setMessages((current) => current.map((message) => message.id === assistantMessage.id ? { ...message, state: "complete", content: error instanceof Error ? error.message : "Topic chat failed." } : message));
+      setMessages((current) => current.map((message) => message.id === assistantMessage.id ? { ...message, state: "complete", thinking: "", content: error instanceof Error ? error.message : "Topic chat failed." } : message));
       pushToast("Topic chat failed", error instanceof Error ? error.message : "Try again in a moment.", "danger");
     } finally {
       setIsSending(false);

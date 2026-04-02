@@ -5,6 +5,7 @@ export interface chat_message {
   id: string;
   role: message_role;
   content: string;
+  thinking?: string;
   createdAt: string;
   state?: message_state;
 }
@@ -56,11 +57,12 @@ export interface ask_question_response {
   answer: string;
 }
 
-export type chat_stream_event_type = "start" | "chunk" | "done" | "error";
+export type chat_stream_event_type = "start" | "thinking" | "chunk" | "done" | "error";
 
 export interface chat_stream_event {
   type: chat_stream_event_type;
   content?: string;
+  thinking?: string;
   answer?: string;
   message?: string;
 }
